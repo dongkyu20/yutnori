@@ -13,6 +13,7 @@
     "start": "node build/backend/index.js",
     "start:server": "node build/backend/index.js",
     "smoke:server": "node tests/smoke/production-server.mjs",
+    "typecheck": "tsc --project tsconfig.json --noEmit --incremental false && tsc --project tsconfig.worker.json --noEmit --incremental false",
     "test": "vitest run",
     "test:e2e": "playwright test --config=playwright.config.ts",
     "test:e2e:desktop": "playwright test --config=playwright.config.ts --project=chromium-desktop",

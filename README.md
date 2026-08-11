@@ -52,6 +52,9 @@ npm test
 # 정적 검사
 npm run lint
 
+# 브라우저/서버와 Cloudflare Worker를 분리한 타입 검사
+npm run typecheck
+
 # 브라우저 전체 6개 시나리오
 npm run test:e2e
 
