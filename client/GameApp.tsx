@@ -24,7 +24,10 @@ export function GameApp() {
     <GameScreen
       snapshot={session.snapshot}
       playerId={session.playerId}
+      connectionState={session.connectionState}
+      reactions={session.reactions}
       sendCommand={session.sendCommand}
+      leaveRoom={session.leaveRoom}
     />
   );
 }

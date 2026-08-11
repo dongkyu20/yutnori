@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import Fastify from "fastify";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
@@ -110,5 +110,53 @@ describe("useGameSession terminal reconnect errors", () => {
     expect(second.result.current.playerId).toBeNull();
     expect(second.result.current.snapshot).toBeNull();
     second.unmount();
+  });
+
+  it("exposes received reactions briefly without adding them to the room snapshot", async () => {
+    const roomService = new RoomService();
+    const issuedSession = roomService.createRoom({ nickname: "Host", mode: "individual" });
+    const gateway = await startGateway(roomService);
+    process.env.NEXT_PUBLIC_GAME_SERVER_URL = serverUrls[0];
+    window.localStorage.setItem(RECONNECT_TOKEN_KEY, issuedSession.reconnectToken);
+    const { result, unmount } = renderHook(() => useGameSession());
+
+    await waitFor(() => expect(result.current.playerId).toBe(issuedSession.playerId));
+    const connectedSocket = [...gateway.io.sockets.sockets.values()][0];
+    connectedSocket.emit("reaction", { playerId: issuedSession.playerId, emoji: "🎉" });
+
+    await waitFor(() => {
+      expect(result.current.reactions).toEqual([
+        { id: 1, playerId: issuedSession.playerId, emoji: "🎉" },
+      ]);
+    });
+    expect(result.current.snapshot?.game?.events ?? []).not.toContainEqual(
+      expect.objectContaining({ emoji: "🎉" }),
+    );
+
+    await waitFor(() => expect(result.current.reactions).toEqual([]), { timeout: 2500 });
+    unmount();
+  });
+
+  it("leaves only the room session and reconnects a clean lobby socket", async () => {
+    const roomService = new RoomService();
+    const issuedSession = roomService.createRoom({ nickname: "Host", mode: "individual" });
+    const gateway = await startGateway(roomService);
+    process.env.NEXT_PUBLIC_GAME_SERVER_URL = serverUrls[0];
+    window.localStorage.setItem(RECONNECT_TOKEN_KEY, issuedSession.reconnectToken);
+    const handshakeTokens: unknown[] = [];
+    gateway.io.on("connection", (socket) => handshakeTokens.push(socket.handshake.auth.reconnectToken));
+    const { result, unmount } = renderHook(() => useGameSession());
+
+    await waitFor(() => expect(result.current.connectionState).toBe("connected"));
+    act(() => result.current.leaveRoom());
+
+    await waitFor(() => {
+      expect(result.current.playerId).toBeNull();
+      expect(result.current.snapshot).toBeNull();
+      expect(result.current.connectionState).toBe("connected");
+      expect(handshakeTokens).toEqual([issuedSession.reconnectToken, undefined]);
+    });
+    expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBeNull();
+    unmount();
   });
 });

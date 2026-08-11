@@ -1,14 +1,18 @@
 "use client";
 
 import { io, type Socket } from "socket.io-client";
-import type { PublicRoomSnapshot, ServerError } from "../shared/protocol";
+import type { InRoomCommand, PublicRoomSnapshot, ServerError } from "../shared/protocol";
+
+export type ReactionEmoji = Extract<InRoomCommand, { type: "REACT" }>["emoji"];
+export interface ReactionPayload { playerId: string; emoji: ReactionEmoji }
+export interface ReactionEvent extends ReactionPayload { id: number }
 
 interface ClientToServerEvents {
   command: (command: unknown) => void;
 }
 
 interface ServerToClientEvents {
-  reaction: (reaction: { playerId: string; emoji: "👏" | "🔥" | "😮" | "🎉" }) => void;
+  reaction: (reaction: ReactionPayload) => void;
   server_error: (error: ServerError) => void;
   session: (session: { playerId: string; reconnectToken: string }) => void;
   snapshot: (snapshot: PublicRoomSnapshot) => void;
