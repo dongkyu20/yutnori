@@ -97,3 +97,71 @@ The Task 5 suites cover room-code uniqueness, nickname normalization/uniqueness,
 
 - Task 6 will need a broadcast hook or equivalent gateway integration for snapshots produced asynchronously by timer callbacks. The Task 5 interface does not specify a room-change subscription, so this task intentionally keeps the exact requested API and leaves transport notification wiring to the gateway task.
 - Vinext still emits its existing informational message that some routes cannot be statically classified; the build exits successfully.
+
+---
+
+## Fix round 1/5
+
+### Review findings addressed
+
+- Added public `RoomService.subscribe(listener): () => void` with exported `RoomChange` and `RoomChangeListener` types. Each event contains only `{ roomCode, snapshot }`, where `snapshot` is produced through the existing secret-stripping public projection.
+- Create, join, reconnect, accepted versioned commands, disconnect, and timer-driven automatic actions now emit exactly one notification after their mutation is complete. Duplicate requests, repeated disconnects, already-connected reconnects, reactions, and timer wakeups that only restore a preserved deadline emit none.
+- The returned unsubscribe function removes the listener; a real timer test proves no notifications arrive after unsubscribe.
+- Centralized the four cited user-facing messages as valid UTF-8 Korean constants. A byte/text audit found no replacement characters in the committed source, and a behavior test now rejects `?`/`�` corruption while requiring readable Hangul.
+- Replaced every exact Korean error-string assertion in `rooms.test.ts` with stable `RoomError.code` assertions. Message wording is no longer coupled to domain behavior.
+
+### TDD evidence
+
+Subscription RED before production changes:
+
+```powershell
+& .\node_modules\.bin\vitest.cmd run tests/unit/rooms.test.ts -t "RoomService change subscriptions"
+```
+
+```text
+TypeError: service.subscribe is not a function
+Test Files  1 failed (1)
+Tests  4 failed | 21 skipped (25)
+```
+
+Subscription GREEN after the minimal listener set and notification calls:
+
+```text
+Test Files  1 passed (1)
+Tests  4 passed | 21 skipped (25)
+```
+
+The Korean-message mutation check deliberately replaced `ROOM_NOT_FOUND` with `???`. The focused readability test failed as intended:
+
+```text
+expected '???' to match /[가-힣]/
+Test Files  1 failed (1)
+Tests  1 failed | 25 skipped (26)
+```
+
+After restoring `방을 찾을 수 없습니다.` the same focused test passed:
+
+```text
+Test Files  1 passed (1)
+Tests  1 passed | 25 skipped (26)
+```
+
+### Verification
+
+- Amended Task 5 suites: 2 files passed, 30 tests passed.
+- Full suite: 7 files passed, 75 tests passed.
+- Production build: all five Vinext stages completed; exit 0.
+- Targeted ESLint and `git diff --check`: exit 0 with no lint or whitespace errors. Git only printed its existing LF-to-CRLF working-copy warning.
+- Standalone TypeScript check still reports only the same pre-existing Cloudflare worker declarations and Zod `SafeParseReturnType` errors; no Task 5 type errors were reported.
+
+### Fix-round self-review
+
+- Notification happens after version increments and after timer scheduling/finish cleanup, so subscribers see the same complete snapshot returned by synchronous APIs or produced by the automatic action.
+- The listener collection is copied before iteration, making unsubscribe-during-notification deterministic.
+- Automatic actions emit once per reducer transition, including each immediate action needed while the current player remains disconnected.
+- Public notification tests assert room code, version, connected/host state, generated throw result, secret stripping, duplicate suppression, and unsubscribe behavior rather than callback call mechanics.
+
+### Updated concerns
+
+- The earlier Task 6 broadcast-hook concern is resolved by `RoomService.subscribe()`; Task 6 can subscribe once and broadcast `change.snapshot` to `room:${change.roomCode}`.
+- Vinext retains its informational route-classification message; the build exits successfully.

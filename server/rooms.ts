@@ -15,6 +15,12 @@ const ROOM_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const ACTION_TIMEOUT_MS = 45_000;
 const EMPTY_ROOM_TTL_MS = 10 * 60_000;
 const FINISHED_ROOM_TTL_MS = 30 * 60_000;
+const ROOM_ERROR_MESSAGES = {
+  ROOM_NOT_FOUND: "방을 찾을 수 없습니다.",
+  GAME_ALREADY_STARTED: "이미 시작된 게임입니다.",
+  GAME_NOT_PLAYING: "진행 중인 게임이 아닙니다.",
+  ROOM_NOT_WAITING: "대기 중인 방에서만 수행할 수 있습니다.",
+} as const;
 
 type VersionedCommand = Exclude<InRoomCommand, { type: "REACT" }>;
 
@@ -60,6 +66,13 @@ export interface SessionResult {
   reconnectToken: string;
 }
 
+export interface RoomChange {
+  roomCode: string;
+  snapshot: PublicRoomSnapshot;
+}
+
+export type RoomChangeListener = (change: RoomChange) => void;
+
 export class RoomError extends Error {
   constructor(
     readonly code: string,
@@ -95,9 +108,15 @@ export class RoomService {
   private readonly rooms = new Map<string, Room>();
   private readonly playerRooms = new Map<string, string>();
   private readonly sessions = new Map<string, SessionLocation>();
+  private readonly listeners = new Set<RoomChangeListener>();
 
   constructor(options: Partial<RoomServiceOptions> = {}) {
     this.options = { ...defaultOptions, ...options };
+  }
+
+  subscribe(listener: RoomChangeListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   createRoom(input: { nickname: string; mode: GameMode }): SessionResult {
@@ -125,7 +144,9 @@ export class RoomService {
       playerId: session.player.id,
     });
 
-    return this.sessionResult(room, session.player.id, session.token);
+    const result = this.sessionResult(room, session.player.id, session.token);
+    this.notify(room, result.snapshot);
+    return result;
   }
 
   joinRoom(input: { roomCode: string; nickname: string }): SessionResult {
@@ -133,10 +154,10 @@ export class RoomService {
     const nickname = nicknameSchema.parse(input.nickname);
     const room = this.rooms.get(roomCode);
     if (!room) {
-      throw new RoomError("ROOM_NOT_FOUND", "방을 찾을 수 없습니다.");
+      throw new RoomError("ROOM_NOT_FOUND", ROOM_ERROR_MESSAGES.ROOM_NOT_FOUND);
     }
     if (room.phase !== "waiting") {
-      throw new RoomError("GAME_ALREADY_STARTED", "이미 시작된 게임입니다.");
+      throw new RoomError("GAME_ALREADY_STARTED", ROOM_ERROR_MESSAGES.GAME_ALREADY_STARTED);
     }
     if (room.players.length >= roomCapacity(room.mode)) {
       throw new RoomError("ROOM_FULL", "방이 가득 찼습니다.");
@@ -155,7 +176,9 @@ export class RoomService {
       roomCode,
       playerId: session.player.id,
     });
-    return this.sessionResult(room, session.player.id, session.token);
+    const result = this.sessionResult(room, session.player.id, session.token);
+    this.notify(room, result.snapshot);
+    return result;
   }
 
   reconnect(token: string): SessionResult {
@@ -166,6 +189,7 @@ export class RoomService {
       throw new RoomError("SESSION_NOT_FOUND", "재접속 세션을 찾을 수 없습니다.", false);
     }
 
+    let changed = false;
     if (!player.connected) {
       player.connected = true;
       room.emptySince = null;
@@ -173,9 +197,12 @@ export class RoomService {
         room.hostPlayerId = player.id;
       }
       room.version += 1;
+      changed = true;
     }
 
-    return this.sessionResult(room, player.id, token);
+    const result = this.sessionResult(room, player.id, token);
+    if (changed) this.notify(room, result.snapshot);
+    return result;
   }
 
   dispatch(playerId: string, command: InRoomCommand): PublicRoomSnapshot {
@@ -197,7 +224,9 @@ export class RoomService {
     this.applyCommand(room, player, command);
     player.processedRequestIds.add(command.requestId);
     room.version += 1;
-    return this.snapshot(room);
+    const snapshot = this.snapshot(room);
+    this.notify(room, snapshot);
+    return snapshot;
   }
 
   disconnect(playerId: string): void {
@@ -219,6 +248,7 @@ export class RoomService {
     if (room.phase === "playing" && room.game?.currentPlayerId === playerId) {
       this.scheduleAction(room, 0, true);
     }
+    this.notify(room);
   }
 
   removeExpiredRooms(): void {
@@ -285,7 +315,7 @@ export class RoomService {
 
   private applyPlayerGameCommand(room: Room, command: Parameters<typeof applyGameCommand>[1]): void {
     if (room.phase !== "playing" || !room.game) {
-      throw new RoomError("GAME_NOT_PLAYING", "진행 중인 게임이 아닙니다.");
+      throw new RoomError("GAME_NOT_PLAYING", ROOM_ERROR_MESSAGES.GAME_NOT_PLAYING);
     }
     room.game = applyGameCommand(room.game, command);
     if (room.game.turnStage === "COMPLETE") {
@@ -388,16 +418,16 @@ export class RoomService {
     room.version += 1;
     if (room.game.turnStage === "COMPLETE") {
       this.finishRoom(room);
-      return;
+    } else {
+      const nextPlayer = room.players.find((player) => player.id === room.game?.currentPlayerId);
+      this.scheduleAction(room, nextPlayer?.connected ? ACTION_TIMEOUT_MS : 0);
     }
-
-    const nextPlayer = room.players.find((player) => player.id === room.game?.currentPlayerId);
-    this.scheduleAction(room, nextPlayer?.connected ? ACTION_TIMEOUT_MS : 0);
+    this.notify(room);
   }
 
   private assertWaiting(room: Room): void {
     if (room.phase !== "waiting") {
-      throw new RoomError("ROOM_NOT_WAITING", "대기 중인 방에서만 수행할 수 있습니다.");
+      throw new RoomError("ROOM_NOT_WAITING", ROOM_ERROR_MESSAGES.ROOM_NOT_WAITING);
     }
   }
 
@@ -472,6 +502,11 @@ export class RoomService {
         ? toPublicGameState(room.game, room.phase === "playing" ? room.actionExpiresAt : null)
         : null,
     };
+  }
+
+  private notify(room: Room, snapshot: PublicRoomSnapshot = this.snapshot(room)): void {
+    const change = { roomCode: room.roomCode, snapshot };
+    for (const listener of [...this.listeners]) listener(change);
   }
 
   private deleteRoom(room: Room): void {

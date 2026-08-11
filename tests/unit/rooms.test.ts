@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { GameMode, PublicRoomSnapshot, TeamId } from "../../shared/protocol";
-import { RoomService, type RoomServiceOptions, type SessionResult } from "../../server/rooms";
+import {
+  RoomError,
+  RoomService,
+  type RoomChange,
+  type RoomServiceOptions,
+  type SessionResult,
+} from "../../server/rooms";
 
 type VersionedInRoomCommand = Exclude<Parameters<RoomService["dispatch"]>[1], { type: "REACT" }>;
 type CommandWithoutMetadata<T> = T extends unknown ? Omit<T, "roomVersion" | "requestId"> : never;
@@ -59,6 +65,16 @@ const dispatch = (
     requestId: requestId(),
   } as VersionedInRoomCommand);
 
+function roomError(action: () => unknown): RoomError {
+  try {
+    action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(RoomError);
+    return error as RoomError;
+  }
+  throw new Error("RoomError가 발생해야 합니다.");
+}
+
 function createPlayers(
   service: RoomService,
   mode: GameMode,
@@ -83,6 +99,18 @@ function readyIndividualGame(service: RoomService): SessionResult[] {
 }
 
 describe("RoomService lobby lifecycle", () => {
+  it("returns a stable code with readable Korean for a user-facing error", () => {
+    const service = new RoomService(new FakeClock().options());
+
+    const error = roomError(() =>
+      service.joinRoom({ roomCode: "222222", nickname: "Guest" }),
+    );
+
+    expect(error.code).toBe("ROOM_NOT_FOUND");
+    expect(error.message).toMatch(/[가-힣]/);
+    expect(error.message).not.toMatch(/[?�]/);
+  });
+
   it("creates unique six-character unambiguous room codes", () => {
     const values = [...Array(6).fill(0), ...Array(6).fill(0.25)];
     let index = 0;
@@ -101,9 +129,9 @@ describe("RoomService lobby lifecycle", () => {
     const created = service.createRoom({ nickname: "  Alpha  ", mode: "individual" });
 
     expect(created.snapshot.players[0].nickname).toBe("Alpha");
-    expect(() =>
+    expect(roomError(() =>
       service.joinRoom({ roomCode: created.snapshot.roomCode.toLowerCase(), nickname: "alpha" }),
-    ).toThrowError("이미 사용 중인 닉네임입니다");
+    ).code).toBe("NICKNAME_TAKEN");
   });
 
   it("keeps reconnect credentials out of public snapshots", () => {
@@ -124,18 +152,18 @@ describe("RoomService lobby lifecycle", () => {
     const sessions = createPlayers(service, mode, members);
 
     expect(sessions.at(-1)!.snapshot.players).toHaveLength(capacity);
-    expect(() =>
+    expect(roomError(() =>
       service.joinRoom({ roomCode: sessions[0].snapshot.roomCode, nickname: extra }),
-    ).toThrowError("방이 가득 찼습니다");
+    ).code).toBe("ROOM_FULL");
   });
 
   it("requires two ready players before an individual game can start", () => {
     const service = new RoomService(new FakeClock().options());
     const [host, guest] = createPlayers(service, "individual", ["Host", "Guest"]);
 
-    expect(() =>
+    expect(roomError(() =>
       dispatch(service, host.playerId, guest.snapshot, { type: "START_GAME" }),
-    ).toThrowError("모든 참가자가 준비해야 합니다");
+    ).code).toBe("PLAYERS_NOT_READY");
   });
 
   it("requires exactly two ready players in every team", () => {
@@ -167,8 +195,9 @@ describe("RoomService lobby lifecycle", () => {
     const service = new RoomService(new FakeClock().options());
     const [host, guest] = createPlayers(service, "team", ["Host", "Guest"]);
 
-    expect(() => dispatch(service, host.playerId, guest.snapshot, { type: "START_GAME" }))
-      .toThrowError("각 팀에 두 명이 필요합니다");
+    expect(roomError(() =>
+      dispatch(service, host.playerId, guest.snapshot, { type: "START_GAME" }),
+    ).code).toBe("INVALID_TEAM_COMPOSITION");
   });
 
   it("restricts team assignment to the host", () => {
@@ -176,26 +205,27 @@ describe("RoomService lobby lifecycle", () => {
     const [host, guest] = createPlayers(service, "team", ["Host", "Guest"]);
     const snapshot = guest.snapshot;
 
-    expect(() => dispatch(service, guest.playerId, snapshot, {
+    expect(roomError(() => dispatch(service, guest.playerId, snapshot, {
       type: "ASSIGN_TEAM", playerId: host.playerId, teamId: "A",
-    })).toThrowError("방장만 수행할 수 있습니다");
+    })).code).toBe("HOST_ONLY");
   });
 
   it("restricts kicking to the host", () => {
     const service = new RoomService(new FakeClock().options());
     const [host, guest] = createPlayers(service, "team", ["Host", "Guest"]);
 
-    expect(() => dispatch(service, guest.playerId, guest.snapshot, {
+    expect(roomError(() => dispatch(service, guest.playerId, guest.snapshot, {
       type: "KICK_PLAYER", playerId: host.playerId,
-    })).toThrowError("방장만 수행할 수 있습니다");
+    })).code).toBe("HOST_ONLY");
   });
 
   it("restricts game start to the host", () => {
     const service = new RoomService(new FakeClock().options());
     const [, guest] = createPlayers(service, "team", ["Host", "Guest"]);
 
-    expect(() => dispatch(service, guest.playerId, guest.snapshot, { type: "START_GAME" }))
-      .toThrowError("방장만 수행할 수 있습니다");
+    expect(roomError(() =>
+      dispatch(service, guest.playerId, guest.snapshot, { type: "START_GAME" }),
+    ).code).toBe("HOST_ONLY");
   });
 
   it("reassigns the waiting-room host when the host disconnects", () => {
@@ -214,9 +244,9 @@ describe("RoomService lobby lifecycle", () => {
     const [host, guest] = readyIndividualGame(service);
 
     service.disconnect(guest.playerId);
-    expect(() =>
+    expect(roomError(() =>
       service.joinRoom({ roomCode: host.snapshot.roomCode, nickname: "Newcomer" }),
-    ).toThrowError("이미 시작된 게임입니다");
+    ).code).toBe("GAME_ALREADY_STARTED");
 
     const restored = service.reconnect(guest.reconnectToken);
     expect(restored.playerId).toBe(guest.playerId);
@@ -246,12 +276,12 @@ describe("RoomService lobby lifecycle", () => {
     const created = service.createRoom({ nickname: "Host", mode: "individual" });
     const current = dispatch(service, created.playerId, created.snapshot, { type: "SET_READY", ready: true });
 
-    expect(() => service.dispatch(created.playerId, {
+    expect(roomError(() => service.dispatch(created.playerId, {
       type: "SET_READY",
       ready: false,
       roomVersion: created.snapshot.version,
       requestId: requestId(),
-    })).toThrowError("오래된 방 버전입니다");
+    })).code).toBe("STALE_VERSION");
     expect(service.reconnect(created.reconnectToken).snapshot.players[0].ready).toBe(true);
     expect(current.players[0].ready).toBe(true);
   });
@@ -331,7 +361,7 @@ describe("RoomService timers and cleanup", () => {
 
     clock.advance(600_000);
     service.removeExpiredRooms();
-    expect(() => service.reconnect(created.reconnectToken)).toThrowError("재접속 세션을 찾을 수 없습니다");
+    expect(roomError(() => service.reconnect(created.reconnectToken)).code).toBe("SESSION_NOT_FOUND");
   });
 
   it("deletes a finished room after thirty minutes", () => {
@@ -362,6 +392,76 @@ describe("RoomService timers and cleanup", () => {
     expect(service.reconnect(host.reconnectToken).snapshot.phase).toBe("finished");
     clock.advance(1);
     service.removeExpiredRooms();
-    expect(() => service.reconnect(host.reconnectToken)).toThrowError("재접속 세션을 찾을 수 없습니다");
+    expect(roomError(() => service.reconnect(host.reconnectToken)).code).toBe("SESSION_NOT_FOUND");
+  });
+});
+
+describe("RoomService change subscriptions", () => {
+  it("emits one public snapshot for an accepted command and none for its duplicate", () => {
+    const service = new RoomService(new FakeClock().options());
+    const created = service.createRoom({ nickname: "Host", mode: "individual" });
+    const changes: RoomChange[] = [];
+    service.subscribe((change) => changes.push(change));
+    const command = {
+      type: "SET_READY" as const,
+      ready: true,
+      roomVersion: created.snapshot.version,
+      requestId: requestId(),
+    };
+
+    const accepted = service.dispatch(created.playerId, command);
+    service.dispatch(created.playerId, command);
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toEqual({ roomCode: created.snapshot.roomCode, snapshot: accepted });
+  });
+
+  it("emits exactly one public snapshot when a player disconnects", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host, guest] = createPlayers(service, "individual", ["Host", "Guest"]);
+    const changes: RoomChange[] = [];
+    service.subscribe((change) => changes.push(change));
+
+    service.disconnect(host.playerId);
+    service.disconnect(host.playerId);
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0].roomCode).toBe(host.snapshot.roomCode);
+    expect(changes[0].snapshot.hostPlayerId).toBe(guest.playerId);
+    expect(changes[0].snapshot.players.find((player) => player.id === host.playerId)?.connected).toBe(false);
+    expect(JSON.stringify(changes[0])).not.toContain("reconnectToken");
+  });
+
+  it("emits exactly one public snapshot for a timer-driven automatic action", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options(() => 0.1));
+    const [host] = readyIndividualGame(service);
+    const changes: RoomChange[] = [];
+    const unsubscribe = service.subscribe((change) => changes.push(change));
+
+    clock.advance(45_000);
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0].roomCode).toBe(host.snapshot.roomCode);
+    expect(changes[0].snapshot.version).toBe(host.snapshot.version + 1);
+    expect(changes[0].snapshot.game?.lastThrow?.result).toBe("MO");
+
+    unsubscribe();
+    clock.advance(45_000);
+    expect(changes).toHaveLength(1);
+  });
+
+  it("emits one snapshot for each create, join, disconnect, and reconnect mutation", () => {
+    const service = new RoomService(new FakeClock().options());
+    const changes: RoomChange[] = [];
+    service.subscribe((change) => changes.push(change));
+
+    const host = service.createRoom({ nickname: "Host", mode: "individual" });
+    const guest = service.joinRoom({ roomCode: host.snapshot.roomCode, nickname: "Guest" });
+    service.disconnect(guest.playerId);
+    service.reconnect(guest.reconnectToken);
+
+    expect(changes.map((change) => change.snapshot.version)).toEqual([0, 1, 2, 3]);
+    expect(changes.every((change) => change.roomCode === host.snapshot.roomCode)).toBe(true);
   });
 });
