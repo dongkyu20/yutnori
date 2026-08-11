@@ -76,4 +76,39 @@ describe("useGameSession terminal reconnect errors", () => {
     expect(connections).toBe(1);
     unmount();
   });
+
+  it("does not send a stale reconnect token or restore the old session after remounting", async () => {
+    const roomService = new RoomService();
+    const issuedSession = roomService.createRoom({ nickname: "Host", mode: "individual" });
+    const gateway = await startGateway(roomService);
+    process.env.NEXT_PUBLIC_GAME_SERVER_URL = serverUrls[0];
+    window.localStorage.setItem(RECONNECT_TOKEN_KEY, issuedSession.reconnectToken);
+    const handshakeTokens: unknown[] = [];
+    gateway.io.on("connection", (socket) => {
+      handshakeTokens.push(socket.handshake.auth.reconnectToken);
+    });
+
+    const first = renderHook(() => useGameSession());
+    await waitFor(() => expect(first.result.current.playerId).toBe(issuedSession.playerId));
+    const connectedSocket = [...gateway.io.sockets.sockets.values()][0];
+    connectedSocket.emit("server_error", terminalErrors[1]);
+
+    await waitFor(() => {
+      expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBeNull();
+      expect(first.result.current.playerId).toBeNull();
+      expect(first.result.current.snapshot).toBeNull();
+    });
+    first.unmount();
+
+    const second = renderHook(() => useGameSession());
+    await waitFor(() => {
+      expect(handshakeTokens).toHaveLength(2);
+      expect(second.result.current.connectionState).toBe("connected");
+    });
+
+    expect(handshakeTokens).toEqual([issuedSession.reconnectToken, undefined]);
+    expect(second.result.current.playerId).toBeNull();
+    expect(second.result.current.snapshot).toBeNull();
+    second.unmount();
+  });
 });
