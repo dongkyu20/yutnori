@@ -9,11 +9,16 @@ describe("deployment packaging", () => {
   it("builds a Node 22 backend artifact without global build tools", () => {
     const packageJson = JSON.parse(read("package.json")) as {
       scripts: Record<string, string>;
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
     };
 
     expect(packageJson.scripts["build:server"]).toContain("node_modules/esbuild/bin/esbuild");
-    expect(packageJson.scripts["start:server"]).toBe("node dist/server/index.js");
+    expect(packageJson.scripts.start).toBe("node build/backend/index.js");
+    expect(packageJson.scripts["start:server"]).toBe("node build/backend/index.js");
     expect(packageJson.scripts["smoke:server"]).toContain("production-server.mjs");
+    expect(packageJson.dependencies.tsx).toBeUndefined();
+    expect(packageJson.devDependencies.tsx).toBe("^4.23.12");
   });
 
   it("uses a production-only, non-root Docker runtime with health checks", () => {
@@ -39,6 +44,9 @@ describe("deployment packaging", () => {
     expect(readme).toContain("45초");
     expect(readme).toContain("재시작하면 모든 방과 진행 중인 게임이 사라집니다");
     expect(readme).toContain("HTTPS/WSS");
+    expect(readme).toContain("npm install");
+    expect(readme).toContain("npm start");
+    expect(readme).not.toContain("`build/backend/index.js`를 `dist/server/index.js`로 복사");
   });
 
   it("ships the inspected 1200 by 630 social preview", () => {

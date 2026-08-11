@@ -34,6 +34,13 @@ interface SignalRegistrar {
   once: (signal: "SIGINT" | "SIGTERM", listener: () => void) => unknown;
 }
 
+export interface StartServerOptions {
+  port?: number;
+  publicOrigin?: string;
+  server?: FastifyInstance;
+  signals?: SignalRegistrar;
+}
+
 export function registerGracefulShutdown(
   server: ShutdownServer,
   signals: SignalRegistrar = process,
@@ -114,11 +121,14 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   return server;
 }
 
-async function start(): Promise<void> {
-  const port = Number(process.env.PORT ?? DEFAULT_PORT);
-  const server = buildServer({ publicOrigin: process.env.PUBLIC_ORIGIN });
+export async function startServer(options: StartServerOptions = {}): Promise<FastifyInstance> {
+  const port = options.port ?? Number(process.env.PORT ?? DEFAULT_PORT);
+  const server = options.server ?? buildServer({
+    publicOrigin: options.publicOrigin ?? process.env.PUBLIC_ORIGIN,
+  });
   await server.listen({ host: "0.0.0.0", port });
-  registerGracefulShutdown(server);
+  registerGracefulShutdown(server, options.signals);
+  return server;
 }
 
 const entrypoint = process.argv[1]
@@ -126,7 +136,7 @@ const entrypoint = process.argv[1]
   : false;
 
 if (entrypoint) {
-  start().catch((error: unknown) => {
+  startServer().catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;
   });

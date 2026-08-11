@@ -10,11 +10,16 @@
 - Docker 실행에는 Docker Engine(선택 사항)
 
 ```bash
+# CI, 컨테이너, 재현 가능한 검증: lockfile 그대로 깨끗하게 설치
 npm ci
+
+# 로컬에서 의존성을 추가·갱신하며 package-lock.json도 관리할 때
+npm install
+
 cp .env.example .env.local
 ```
 
-Windows PowerShell에서는 `Copy-Item .env.example .env.local`을 사용합니다. `.env.local`에는 비밀값이 없지만 저장소에 커밋하지 않습니다.
+두 설치 명령을 연달아 실행할 필요는 없습니다. 검증과 배포에는 `npm ci`를 사용하고, 로컬에서 의존성 구성을 변경할 때만 `npm install`을 사용합니다. Windows PowerShell에서는 `Copy-Item .env.example .env.local`을 사용합니다. `.env.local`에는 비밀값이 없지만 저장소에 커밋하지 않습니다.
 
 ## 로컬 개발
 
@@ -60,14 +65,17 @@ npm run build
 # Node 22에서 실행 가능한 백엔드 번들 생성
 npm run build:server
 
-# 생성물을 dist/server/index.js 위치로 배치한 운영 서버 시작
+# build/backend/index.js 운영 서버 시작
+npm start
+
+# 같은 운영 서버 명령의 명시적 별칭
 npm run start:server
 
 # /health와 실제 Socket.IO 2클라이언트 create/join smoke
 npm run smoke:server
 ```
 
-`npm run build:server`의 직접 출력은 `build/backend/index.js`입니다. Docker 빌드는 이를 런타임의 `dist/server/index.js`로 복사합니다. 로컬에서 운영 명령을 그대로 확인하려면 빌드 후 `build/backend/index.js`를 `dist/server/index.js`로 복사한 뒤 `npm run start:server`를 실행합니다.
+`npm run build:server`의 직접 출력은 `build/backend/index.js`이며 `npm start`와 `npm run start:server`는 그 파일을 직접 실행합니다. 이 경로는 Vinext 프런트엔드의 `dist/server` 출력과 분리되어 두 빌드가 서로를 덮어쓰지 않습니다. Docker 빌드만 backend artifact를 컨테이너 런타임의 `dist/server/index.js`로 복사합니다.
 
 ## Docker 백엔드
 
