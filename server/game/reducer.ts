@@ -77,6 +77,7 @@ export function createGame(input: CreateGameInput): GameState {
     turnStage: "AWAITING_THROW",
     pieces: input.mode === "team" ? createTeamPieces(players) : createIndividualPieces(players),
     lastThrow: null,
+    lastThrowEventId: null,
     selectedPieceId: null,
     legalPieceIds: [],
     legalRoutes: [],
@@ -185,6 +186,7 @@ function resolveMove(state: GameState, pieceId: string, option: MoveOption): Gam
 
 function applyThrow(state: GameState, command: Extract<GameCommand, { type: "THROW" }>): GameState {
   requireStage(state, "AWAITING_THROW");
+  const throwEventId = `event-${state.events.length + 1}`;
   const bonusThrowsRemaining =
     Math.max(0, state.bonusThrowsRemaining - 1) + command.outcome.bonusThrows;
   const legalPieceIds = getLegalPieceIds(
@@ -197,6 +199,7 @@ function applyThrow(state: GameState, command: Extract<GameCommand, { type: "THR
       ...clearedTurnSelection(state),
       turnStage: "AWAITING_PIECE",
       lastThrow: { ...command.outcome, sticks: [...command.outcome.sticks] as ThrowOutcome["sticks"] },
+      lastThrowEventId: throwEventId,
       bonusThrowsRemaining,
       legalPieceIds,
     },
@@ -320,7 +323,11 @@ export function toPublicGameState(
       destinationNodeId: option.nodeId,
     })),
     lastThrow: state.lastThrow
-      ? { result: state.lastThrow.result, sticks: [...state.lastThrow.sticks] as ThrowOutcome["sticks"] }
+      ? {
+          eventId: state.lastThrowEventId ?? (() => { throw new Error("Throw event id is missing"); })(),
+          result: state.lastThrow.result,
+          sticks: [...state.lastThrow.sticks] as ThrowOutcome["sticks"],
+        }
       : null,
     winnerId: state.winnerId,
     events: state.events.map((event) => ({ ...event })),

@@ -1,5 +1,6 @@
 "use client";
 
+import { GameScreen } from "./components/GameScreen";
 import { Lobby } from "./components/Lobby";
 import { WaitingRoom } from "./components/WaitingRoom";
 import { useGameSession } from "./useGameSession";
@@ -19,5 +20,11 @@ export function GameApp() {
     );
   }
 
-  return <main><p>게임이 진행 중입니다.</p></main>;
+  return (
+    <GameScreen
+      snapshot={session.snapshot}
+      playerId={session.playerId}
+      sendCommand={session.sendCommand}
+    />
+  );
 }

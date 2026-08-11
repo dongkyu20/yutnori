@@ -66,6 +66,7 @@ export interface GameState {
   turnStage: TurnStage;
   pieces: Piece[];
   lastThrow: ThrowOutcome | null;
+  lastThrowEventId: string | null;
   selectedPieceId: string | null;
   legalPieceIds: string[];
   legalRoutes: PiecePosition["routeId"][];

@@ -21,7 +21,7 @@ export interface PublicGameState {
   pieces: Array<{ id: string; ownerId: string; teamId?: TeamId; status: "HOME" | "BOARD" | "FINISHED"; nodeId?: string; stackSize: number }>;
   legalPieceIds: string[];
   legalRoutes: Array<{ routeId: string; destinationNodeId: string }>;
-  lastThrow: { result: "BACK_DO" | "DO" | "GAE" | "GEOL" | "YUT" | "MO"; sticks: [boolean, boolean, boolean, boolean] } | null;
+  lastThrow: { eventId: string; result: "BACK_DO" | "DO" | "GAE" | "GEOL" | "YUT" | "MO"; sticks: [boolean, boolean, boolean, boolean] } | null;
   winnerId: string | null;
   events: Array<{ id: string; message: string; createdAt: number }>;
 }

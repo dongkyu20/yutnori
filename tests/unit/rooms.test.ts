@@ -358,6 +358,7 @@ describe("RoomService timers and cleanup", () => {
     const thrown = dispatch(service, host.playerId, host.snapshot, { type: "THROW_YUT" });
 
     expect(thrown.game?.lastThrow).toEqual({
+      eventId: "event-1",
       result: "MO",
       sticks: [true, true, true, true],
     });

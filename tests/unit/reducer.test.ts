@@ -226,4 +226,25 @@ describe("game reducer", () => {
     });
     expect(publicState).not.toHaveProperty("pendingMoveOptions");
   });
+
+  it("projects a distinct authoritative event id for identical consecutive throws", () => {
+    let state = individualGame();
+    state = applyGameCommand(state, {
+      type: "THROW",
+      actorId: "A1",
+      outcome: outcome("BACK_DO", -1),
+    });
+    const firstThrow = toPublicGameState(state).lastThrow;
+
+    state = applyGameCommand(state, {
+      type: "THROW",
+      actorId: "B1",
+      outcome: outcome("BACK_DO", -1),
+    });
+    const secondThrow = toPublicGameState(state).lastThrow;
+
+    expect(firstThrow).toMatchObject({ eventId: "event-1", result: "BACK_DO" });
+    expect(secondThrow).toMatchObject({ eventId: "event-3", result: "BACK_DO" });
+    expect(secondThrow?.eventId).not.toBe(firstThrow?.eventId);
+  });
 });
