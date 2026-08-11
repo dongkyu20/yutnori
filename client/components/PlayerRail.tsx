@@ -39,7 +39,11 @@ export function PlayerRail({
         const isHost = player.id === hostPlayerId;
         const isCurrentPlayer = player.id === currentPlayerId;
         return (
-          <li key={player.id}>
+          <li
+            key={player.id}
+            data-player-id={player.id}
+            data-team-id={player.teamId}
+          >
             <strong>{player.nickname}</strong>{isHost && <span> 방장</span>}
             <span>{player.connected ? "연결됨" : "연결 끊김"}</span>
             <span>{player.ready ? "준비 완료" : "준비 안 됨"}</span>

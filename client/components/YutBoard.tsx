@@ -146,6 +146,10 @@ export function YutBoard({ game, players, playerId, onSelectPiece, onSelectRoute
         className={`yut-piece yut-piece--${(group.teamId ?? "player").toLowerCase()}`}
         style={group.nodeId ? nodeStyle(group.nodeId) : undefined}
         aria-label={label}
+        data-piece-ids={group.pieces.map((piece) => piece.id).sort().join(",")}
+        data-piece-status={group.status}
+        data-node-id={group.nodeId}
+        data-controller-id={group.controllerId}
         disabled={!enabled}
         onClick={() => { if (enabled && legalPieceId) onSelectPiece(legalPieceId); }}
       >

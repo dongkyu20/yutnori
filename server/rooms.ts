@@ -17,7 +17,7 @@ import type { GameState } from "./game/types";
 import { throwYut } from "./game/yut";
 
 const ROOM_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
-const ACTION_TIMEOUT_MS = 45_000;
+const DEFAULT_ACTION_TIMEOUT_MS = 45_000;
 const EMPTY_ROOM_TTL_MS = 10 * 60_000;
 const FINISHED_ROOM_TTL_MS = 30 * 60_000;
 const ROOM_ERROR_MESSAGES = {
@@ -67,6 +67,7 @@ type StartEligibility =
   };
 
 export interface RoomServiceOptions {
+  actionTimeoutMs: number;
   now: () => number;
   random: () => number;
   schedule: (fn: () => void, ms: number) => unknown;
@@ -106,6 +107,7 @@ export class RoomError extends Error {
 }
 
 const defaultOptions: RoomServiceOptions = {
+  actionTimeoutMs: DEFAULT_ACTION_TIMEOUT_MS,
   now: Date.now,
   random: Math.random,
   schedule: (fn, ms) => setTimeout(fn, ms),
@@ -359,7 +361,7 @@ export class RoomService {
     if (room.game.turnStage === "COMPLETE") {
       this.finishRoom(room);
     } else {
-      this.scheduleAction(room, ACTION_TIMEOUT_MS);
+      this.scheduleAction(room, this.options.actionTimeoutMs);
     }
   }
 
@@ -406,7 +408,7 @@ export class RoomService {
       })),
     });
     room.phase = "playing";
-    this.scheduleAction(room, ACTION_TIMEOUT_MS);
+    this.scheduleAction(room, this.options.actionTimeoutMs);
   }
 
   private finishRoom(room: Room): void {
@@ -422,7 +424,7 @@ export class RoomService {
   private scheduleAction(room: Room, delay: number, preserveDeadline = false): void {
     if (!room.game || room.phase !== "playing") return;
     if (room.actionTimerId !== null) this.options.cancel(room.actionTimerId);
-    if (!preserveDeadline) room.actionExpiresAt = this.options.now() + ACTION_TIMEOUT_MS;
+    if (!preserveDeadline) room.actionExpiresAt = this.options.now() + this.options.actionTimeoutMs;
     room.actionTimerId = this.options.schedule(() => this.handleActionTimer(room.roomCode), delay);
   }
 
@@ -444,7 +446,7 @@ export class RoomService {
       this.finishRoom(room);
     } else {
       const nextPlayer = room.players.find((player) => player.id === room.game?.currentPlayerId);
-      this.scheduleAction(room, nextPlayer?.connected ? ACTION_TIMEOUT_MS : 0);
+      this.scheduleAction(room, nextPlayer?.connected ? this.options.actionTimeoutMs : 0);
     }
     this.notify(room);
   }

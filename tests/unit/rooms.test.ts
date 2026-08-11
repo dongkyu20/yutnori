@@ -303,6 +303,25 @@ describe("RoomService lobby lifecycle", () => {
 });
 
 describe("RoomService timers and cleanup", () => {
+  it("uses an injected action timeout without changing the production default", () => {
+    const clock = new FakeClock();
+    const service = new RoomService({
+      ...clock.options(() => 0.1),
+      actionTimeoutMs: 1_000,
+    });
+    const [host] = readyIndividualGame(service);
+
+    expect(host.snapshot.game?.actionExpiresAt).toBe(1_000);
+    expect(clock.scheduledDelays.at(-1)).toBe(1_000);
+    clock.advance(999);
+    expect(clock.executed).toBe(0);
+
+    clock.advance(1);
+    const current = service.reconnect(host.reconnectToken).snapshot;
+    expect(clock.executed).toBe(1);
+    expect(current.game?.lastThrow?.result).toBe("MO");
+  });
+
   it("automatically performs the pending action at exactly 45,000 ms", () => {
     const clock = new FakeClock();
     const service = new RoomService(clock.options(() => 0.1));

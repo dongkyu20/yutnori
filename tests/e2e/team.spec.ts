@@ -1,0 +1,76 @@
+import { expect, test } from "@playwright/test";
+import {
+  advanceCurrentTurn,
+  closePlayers,
+  createRoom,
+  currentNickname,
+  enabledPieceIds,
+  joinRoom,
+  openPlayer,
+  performLegalAction,
+  readyPlayer,
+  roomVersion,
+  startGame,
+  teamPieceIds,
+  waitForVersionAfter,
+  type BrowserPlayer,
+} from "./helpers";
+
+const TURN_ORDER = ["AOne", "BOne", "COne", "DOne", "ATwo", "BTwo", "CTwo", "DTwo"];
+
+test("eight isolated players fill teams A-D and share pieces in interleaved turn order", async ({ browser }, testInfo) => {
+  const players: BrowserPlayer[] = [];
+  try {
+    for (const nickname of TURN_ORDER) players.push(await openPlayer(browser, testInfo, nickname));
+    const host = players[0];
+    const roomCode = await createRoom(host, "team");
+    for (const player of players.slice(1)) await joinRoom(player, roomCode);
+
+    const startButton = host.page.getByRole("button", { name: "게임 시작" });
+    await expect(startButton).toBeDisabled();
+    for (const player of players) {
+      const teamId = player.nickname[0];
+      const before = await roomVersion(host.page);
+      await host.page.getByLabel(`${player.nickname} 팀 배정`).selectOption(teamId);
+      await waitForVersionAfter(players, before);
+    }
+    for (const teamId of ["A", "B", "C", "D"]) {
+      await expect(host.page.getByRole("region", { name: `팀 ${teamId}`, exact: true })).toContainText("2/2");
+    }
+    await expect(startButton).toBeDisabled();
+
+    for (const player of players.slice(0, -1)) {
+      await readyPlayer(player, players);
+      await expect(startButton).toBeDisabled();
+    }
+    await readyPlayer(players.at(-1)!, players);
+    await expect(startButton).toBeEnabled();
+    await startGame(host, players);
+
+    for (let index = 0; index < TURN_ORDER.length; index += 1) {
+      const expectedNickname = TURN_ORDER[index];
+      expect(await currentNickname(host.page)).toBe(expectedNickname);
+      for (const player of players) expect(await currentNickname(player.page)).toBe(expectedNickname);
+
+      const teamId = expectedNickname[0];
+      const expectedPieceIds = [`${teamId}-1`, `${teamId}-2`, `${teamId}-3`, `${teamId}-4`];
+      for (const player of players) expect(await teamPieceIds(player.page, teamId)).toEqual(expectedPieceIds);
+      const teammateIndex = (index + 4) % 8;
+      await expect(players[index].page.getByRole("button", { name: "윷 던지기" })).toBeEnabled();
+      await expect(players[teammateIndex].page.getByRole("button", { name: "윷 던지기" })).toBeDisabled();
+      await performLegalAction(players);
+      const afterThrow = await currentNickname(host.page);
+      if (afterThrow === expectedNickname) {
+        const controlledPieceIds = await enabledPieceIds(players[index].page);
+        expect(controlledPieceIds.length).toBeGreaterThan(0);
+        expect(controlledPieceIds.every((pieceId) => expectedPieceIds.includes(pieceId))).toBe(true);
+        expect(await enabledPieceIds(players[teammateIndex].page)).toEqual([]);
+        await advanceCurrentTurn(players);
+      }
+      expect(await enabledPieceIds(players[teammateIndex].page)).toEqual([]);
+    }
+    expect(await currentNickname(host.page)).toBe("AOne");
+  } finally {
+    await closePlayers(players);
+  }
+});

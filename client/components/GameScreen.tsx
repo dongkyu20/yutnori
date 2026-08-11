@@ -48,7 +48,12 @@ export function GameScreen({
       : snapshot.players.find((player) => player.id === game.winnerId)?.nickname ?? game.winnerId;
 
   return (
-    <main className="game-screen">
+    <main
+      className="game-screen"
+      data-room-version={snapshot.version}
+      data-room-phase={snapshot.phase}
+      data-current-player-id={game.currentPlayerId}
+    >
       <header className="game-screen__header">
         <div><p className="game-screen__eyebrow">우리의 한 판</p><h1>한판윷</h1></div>
         <p>방 코드 <strong>{snapshot.roomCode}</strong></p>
@@ -84,6 +89,8 @@ export function GameScreen({
                   key={player.id}
                   className={`game-player game-player--${(player.teamId ?? "individual").toLowerCase()}`}
                   aria-current={player.id === game.currentPlayerId ? "true" : undefined}
+                  data-player-id={player.id}
+                  data-team-id={player.teamId}
                 >
                   <strong>{player.nickname}</strong>
                   {player.teamId && <span>{player.teamId}팀</span>}

@@ -58,7 +58,7 @@ export function WaitingRoom({ snapshot, playerId, sendCommand }: WaitingRoomProp
   );
 
   return (
-    <main>
+    <main data-room-version={snapshot.version} data-room-phase={snapshot.phase}>
       <header>
         <h1>대기실</h1>
         <p>참가 인원 {`${snapshot.players.length}/${capacity}`}</p>
