@@ -58,6 +58,7 @@ export interface RoomServiceOptions {
   random: () => number;
   schedule: (fn: () => void, ms: number) => unknown;
   cancel: (id: unknown) => void;
+  onListenerError?: (error: unknown) => void;
 }
 
 export interface SessionResult {
@@ -89,6 +90,7 @@ const defaultOptions: RoomServiceOptions = {
   random: Math.random,
   schedule: (fn, ms) => setTimeout(fn, ms),
   cancel: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+  onListenerError: (error) => console.error("Room change listener failed.", error),
 };
 
 function hashToken(token: string): string {
@@ -506,7 +508,17 @@ export class RoomService {
 
   private notify(room: Room, snapshot: PublicRoomSnapshot = this.snapshot(room)): void {
     const change = { roomCode: room.roomCode, snapshot };
-    for (const listener of [...this.listeners]) listener(change);
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(change);
+      } catch (error) {
+        try {
+          this.options.onListenerError?.(error);
+        } catch {
+          // Diagnostics must not change an already-committed room mutation.
+        }
+      }
+    }
   }
 
   private deleteRoom(room: Room): void {

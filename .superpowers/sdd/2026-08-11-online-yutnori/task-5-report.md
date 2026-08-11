@@ -107,7 +107,7 @@ The Task 5 suites cover room-code uniqueness, nickname normalization/uniqueness,
 - Added public `RoomService.subscribe(listener): () => void` with exported `RoomChange` and `RoomChangeListener` types. Each event contains only `{ roomCode, snapshot }`, where `snapshot` is produced through the existing secret-stripping public projection.
 - Create, join, reconnect, accepted versioned commands, disconnect, and timer-driven automatic actions now emit exactly one notification after their mutation is complete. Duplicate requests, repeated disconnects, already-connected reconnects, reactions, and timer wakeups that only restore a preserved deadline emit none.
 - The returned unsubscribe function removes the listener; a real timer test proves no notifications arrive after unsubscribe.
-- Centralized the four cited user-facing messages as valid UTF-8 Korean constants. A byte/text audit found no replacement characters in the committed source, and a behavior test now rejects `?`/`�` corruption while requiring readable Hangul.
+- Centralized the four cited user-facing messages as valid UTF-8 Korean constants. A UTF-8 audit of production source `server/rooms.ts` found no `U+FFFD` replacement characters, and a behavior test now rejects `?`/`\uFFFD` corruption while requiring readable Hangul.
 - Replaced every exact Korean error-string assertion in `rooms.test.ts` with stable `RoomError.code` assertions. Message wording is no longer coupled to domain behavior.
 
 ### TDD evidence
@@ -164,4 +164,77 @@ Tests  1 passed | 25 skipped (26)
 ### Updated concerns
 
 - The earlier Task 6 broadcast-hook concern is resolved by `RoomService.subscribe()`; Task 6 can subscribe once and broadcast `change.snapshot` to `room:${change.roomCode}`.
+- Vinext retains its informational route-classification message; the build exits successfully.
+
+---
+
+## Fix round 2/5
+
+### Review finding addressed
+
+- Isolated every room-change listener invocation with its own `try/catch`. A failed listener cannot escape from an already-committed synchronous mutation, cannot interrupt timer processing, and cannot prevent later listeners from receiving the same public snapshot.
+- Added optional `RoomServiceOptions.onListenerError(error)` as the explicit infrastructure observation policy. Production defaults to `console.error`; tests inject a collector and assert the exact original error is reported once.
+- Isolated the diagnostic hook itself so a broken reporter also cannot alter domain-command return behavior after mutation.
+- Corrected the fix-round-1 production-source audit wording and changed the readability matcher to the explicit `\uFFFD` escape.
+
+### TDD evidence
+
+Focused RED command:
+
+```powershell
+$env:PATH='C:\Users\SSAFY\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin;' + $env:PATH
+& .\node_modules\.bin\vitest.cmd run tests/unit/rooms.test.ts -t "isolates a throwing listener"
+```
+
+Result before isolation:
+
+```text
+expected [Function] to not throw an error but 'Error: gateway listener failed' was thrown
+expected [Function] to not throw an error but 'Error: timer listener failed' was thrown
+Test Files  1 failed (1)
+Tests  2 failed | 26 skipped (28)
+```
+
+Focused GREEN after per-listener isolation:
+
+```text
+Test Files  1 passed (1)
+Tests  2 passed | 26 skipped (28)
+```
+
+### Exact final amended-suite evidence
+
+Command:
+
+```powershell
+$env:PATH='C:\Users\SSAFY\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin;' + $env:PATH
+& .\node_modules\.bin\vitest.cmd run tests/unit/rooms.test.ts tests/unit/autoAction.test.ts
+```
+
+Output:
+
+```text
+RUN  v4.1.10 C:/Users/SSAFY/Documents/yut/online-yutnori
+Test Files  2 passed (2)
+Tests  32 passed (32)
+Duration  344ms
+```
+
+### Full verification
+
+- Full suite command: `node_modules\.bin\vitest.cmd run` — exit 0; 7 files passed, 77 tests passed.
+- Production build command: `node_modules\.bin\vinext.cmd build` — exit 0; all five stages completed.
+- Targeted lint command: `node_modules\.bin\eslint.cmd server/rooms.ts server/autoAction.ts tests/unit/rooms.test.ts tests/unit/autoAction.test.ts` — exit 0.
+- `git diff --check` — exit 0; only Git's existing LF-to-CRLF working-copy warnings were printed.
+
+### Fix-round self-review
+
+- Both regression tests use two real subscribed callbacks: the first throws and the second records the actual service event.
+- The command test verifies the accepted snapshot still returns, the committed readiness state is visible, the later subscriber receives it, and the error hook observes the original failure.
+- The timer test verifies the fake scheduler does not surface the listener failure, the later subscriber receives the server-generated `MO` snapshot, and the error hook observes the original timer-listener failure.
+- Listener failures are diagnostic-only. They never roll back room state, alter versioning, reschedule an action, or change the public snapshot.
+
+### Updated concerns
+
+- No open Task 5 correctness concerns from this review round.
 - Vinext retains its informational route-classification message; the build exits successfully.

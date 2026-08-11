@@ -108,7 +108,7 @@ describe("RoomService lobby lifecycle", () => {
 
     expect(error.code).toBe("ROOM_NOT_FOUND");
     expect(error.message).toMatch(/[가-힣]/);
-    expect(error.message).not.toMatch(/[?�]/);
+    expect(error.message).not.toMatch(/[?\uFFFD]/);
   });
 
   it("creates unique six-character unambiguous room codes", () => {
@@ -397,6 +397,53 @@ describe("RoomService timers and cleanup", () => {
 });
 
 describe("RoomService change subscriptions", () => {
+  it("isolates a throwing listener from an accepted command and later listeners", () => {
+    const reported: unknown[] = [];
+    const service = new RoomService({
+      ...new FakeClock().options(),
+      onListenerError: (error) => reported.push(error),
+    });
+    const created = service.createRoom({ nickname: "Host", mode: "individual" });
+    const failure = new Error("gateway listener failed");
+    const delivered: RoomChange[] = [];
+    service.subscribe(() => { throw failure; });
+    service.subscribe((change) => delivered.push(change));
+
+    let accepted: PublicRoomSnapshot | undefined;
+    expect(() => {
+      accepted = dispatch(service, created.playerId, created.snapshot, {
+        type: "SET_READY",
+        ready: true,
+      });
+    }).not.toThrow();
+
+    expect(accepted?.players[0].ready).toBe(true);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0].snapshot).toEqual(accepted);
+    expect(reported).toEqual([failure]);
+  });
+
+  it("isolates a throwing listener from timer delivery to later listeners", () => {
+    const clock = new FakeClock();
+    const reported: unknown[] = [];
+    const service = new RoomService({
+      ...clock.options(() => 0.1),
+      onListenerError: (error) => reported.push(error),
+    });
+    const [host] = readyIndividualGame(service);
+    const failure = new Error("timer listener failed");
+    const delivered: RoomChange[] = [];
+    service.subscribe(() => { throw failure; });
+    service.subscribe((change) => delivered.push(change));
+
+    expect(() => clock.advance(45_000)).not.toThrow();
+
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0].roomCode).toBe(host.snapshot.roomCode);
+    expect(delivered[0].snapshot.game?.lastThrow?.result).toBe("MO");
+    expect(reported).toEqual([failure]);
+  });
+
   it("emits one public snapshot for an accepted command and none for its duplicate", () => {
     const service = new RoomService(new FakeClock().options());
     const created = service.createRoom({ nickname: "Host", mode: "individual" });
