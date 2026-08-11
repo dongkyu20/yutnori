@@ -1,5 +1,5 @@
 {
-  "name": "site-creator-vinext-starter",
+  "name": "online-yutnori",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -9,7 +9,10 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
     "dev:server": "tsx watch server/index.ts",
     "build": "vinext build",
+    "build:server": "node node_modules/esbuild/bin/esbuild ./server/index.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=./build/backend/index.js",
     "start": "tsx server/index.ts",
+    "start:server": "node dist/server/index.js",
+    "smoke:server": "node tests/smoke/production-server.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test --config=playwright.config.ts",
     "test:e2e:desktop": "playwright test --config=playwright.config.ts --project=chromium-desktop",
@@ -44,6 +47,7 @@
     "@vitejs/plugin-rsc": "0.5.26",
     "@vitest/coverage-v8": "^4.1.10",
     "drizzle-kit": "0.31.10",
+    "esbuild": "0.28.0",
     "eslint": "9.39.4",
     "eslint-plugin-jsx-a11y": "6.10.2",
     "eslint-plugin-react": "7.37.5",

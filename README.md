@@ -1,100 +1,111 @@
-# vinext-starter
+# 한판윷
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+방 코드와 닉네임만으로 입장해 여러 브라우저에서 함께 즐기는 서버 권위형 실시간 윷놀이입니다. 프런트엔드는 Vinext, 실시간 백엔드는 Fastify와 Socket.IO로 구성됩니다.
 
-## Prerequisites
+## 요구 사항과 설치
 
-- Node.js `>=22.13.0`
-
-## Quick Start
+- Node.js 22.13 이상
+- npm과 이 저장소에 커밋된 `package-lock.json`
+- 브라우저 E2E에는 Chrome 또는 Edge
+- Docker 실행에는 Docker Engine(선택 사항)
 
 ```bash
-npm install
+npm ci
+cp .env.example .env.local
+```
+
+Windows PowerShell에서는 `Copy-Item .env.example .env.local`을 사용합니다. `.env.local`에는 비밀값이 없지만 저장소에 커밋하지 않습니다.
+
+## 로컬 개발
+
+터미널 두 개에서 프런트엔드와 백엔드를 각각 실행합니다.
+
+```bash
+# 터미널 1: http://localhost:3000
 npm run dev
+
+# 터미널 2: http://localhost:3001
+npm run dev:server
+```
+
+환경 변수의 의미는 다음과 같습니다.
+
+| 이름 | 로컬 기본값 | 용도 |
+| --- | --- | --- |
+| `PORT` | `3001` | Socket.IO 백엔드가 수신할 포트 |
+| `PUBLIC_ORIGIN` | `http://localhost:3000` | 백엔드가 허용할 정확한 브라우저 Origin |
+| `NEXT_PUBLIC_GAME_SERVER_URL` | `http://localhost:3001` | 프런트엔드 번들에 포함할 공개 Socket.IO 주소 |
+
+운영 환경에서는 HTTPS/WSS 조합을 사용합니다. 프런트엔드를 HTTPS로 제공하고 백엔드도 WSS를 사용할 수 있는 HTTPS 주소로 공개해야 합니다. `PUBLIC_ORIGIN`은 실제 프런트엔드 Origin(스킴, 호스트, 포트가 모두 동일하며 끝 슬래시 없음)과 정확히 맞추고, `NEXT_PUBLIC_GAME_SERVER_URL`은 실제 백엔드 HTTPS 주소로 프런트엔드를 빌드하기 전에 설정합니다.
+
+## 테스트와 빌드
+
+```bash
+# 단위, 통합, UI 테스트
+npm test
+
+# 정적 검사
+npm run lint
+
+# 브라우저 전체 6개 시나리오
+npm run test:e2e
+
+# 데스크톱 3개 / 모바일 3개를 따로 실행
+npm run test:e2e:desktop
+npm run test:e2e:mobile
+
+# Vinext 프런트엔드 빌드
 npm run build
+
+# Node 22에서 실행 가능한 백엔드 번들 생성
+npm run build:server
+
+# 생성물을 dist/server/index.js 위치로 배치한 운영 서버 시작
+npm run start:server
+
+# /health와 실제 Socket.IO 2클라이언트 create/join smoke
+npm run smoke:server
 ```
 
-This starter does not use `wrangler.jsonc`.
+`npm run build:server`의 직접 출력은 `build/backend/index.js`입니다. Docker 빌드는 이를 런타임의 `dist/server/index.js`로 복사합니다. 로컬에서 운영 명령을 그대로 확인하려면 빌드 후 `build/backend/index.js`를 `dist/server/index.js`로 복사한 뒤 `npm run start:server`를 실행합니다.
 
-## Included Shape
+## Docker 백엔드
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+멀티 스테이지 이미지는 개발 의존성으로 백엔드를 빌드한 뒤 운영 의존성과 단일 서버 번들만 Node 22 런타임에 복사합니다. 런타임은 비루트 `node` 사용자로 동작하고 `/health`를 확인합니다.
 
-## Workspace Auth Headers
-
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+docker build -t online-yutnori-server .
+docker run --rm -p 3001:3001 \
+  -e PORT=3001 \
+  -e PUBLIC_ORIGIN=https://your-frontend.example \
+  online-yutnori-server
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+PowerShell에서는 한 줄로 실행하거나 줄 끝의 `\` 대신 백틱을 사용합니다.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## 배포 구조
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+프런트엔드와 실시간 백엔드는 별도로 배포합니다.
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+1. Socket.IO WebSocket과 장시간 연결을 지원하는 컨테이너 호스트에 `Dockerfile`의 백엔드를 배포합니다.
+2. 백엔드에 `PUBLIC_ORIGIN=https://실제-프런트엔드-호스트`를 설정합니다.
+3. 프런트엔드 빌드 환경에 `NEXT_PUBLIC_GAME_SERVER_URL=https://실제-백엔드-호스트`를 설정한 뒤 Vinext 결과물을 배포합니다.
+4. 백엔드 `/health`의 HTTP 200과 브라우저의 WSS 연결을 확인합니다.
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+운영 모드의 행동 제한 시간은 45초입니다. 재현 가능한 윷 결과를 위한 `YUT_RANDOM_SEED`와 1초 제한 시간은 정확히 `NODE_ENV=test`일 때만 적용되므로 운영 값을 바꾸지 않습니다.
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+## 게임 규칙
 
-## Useful Commands
+- 개인전은 2~4명이 참가하고 각자 말 4개를 조작합니다.
+- 팀전은 8명이 2명씩 A/B/C/D 네 팀을 구성하는 2v2v2v2 방식입니다.
+- 팀원 둘은 팀의 공용 말 4개를 함께 조작합니다.
+- 팀전 턴 순서는 A1 → B1 → C1 → D1 → A2 → B2 → C2 → D2 입니다.
+- 윷/모와 상대 말 잡기는 추가 던지기, 같은 편 말은 업기, 빽도와 갈림길은 일반적인 윷놀이 규칙을 따릅니다.
+- 행동 시간이 45초를 넘거나 현재 참가자의 연결이 끊기면 서버가 가능한 행동을 자동으로 진행합니다.
+- 닉네임은 영문 또는 완성형 한글만 사용할 수 있고, 공백·숫자·기호·이모티콘 없이 2~12자여야 합니다.
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+## 데이터와 보안 경계
 
-## Learn More
+모든 방, 재접속 세션, 게임 상태는 백엔드 프로세스 메모리에만 저장됩니다. 백엔드를 재시작하면 모든 방과 진행 중인 게임이 사라집니다. 여러 백엔드 인스턴스로 확장하려면 외부 상태 저장소와 Socket.IO 어댑터를 먼저 도입해야 합니다.
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+브라우저는 행동 의도만 전송하며 턴, 윷 결과, 이동 경로, 잡기, 승리 판정은 백엔드가 검증합니다. `PUBLIC_ORIGIN`은 CORS 편의 설정이 아니라 허용 Origin 경계이므로 와일드카드로 바꾸지 마십시오.

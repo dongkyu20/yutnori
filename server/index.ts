@@ -26,6 +26,31 @@ export interface BuildServerOptions {
   roomService?: RoomService;
 }
 
+interface ShutdownServer {
+  close: () => Promise<unknown>;
+}
+
+interface SignalRegistrar {
+  once: (signal: "SIGINT" | "SIGTERM", listener: () => void) => unknown;
+}
+
+export function registerGracefulShutdown(
+  server: ShutdownServer,
+  signals: SignalRegistrar = process,
+): void {
+  let closing = false;
+  const close = () => {
+    if (closing) return;
+    closing = true;
+    void server.close().catch((error: unknown) => {
+      console.error(error);
+      process.exitCode = 1;
+    });
+  };
+  signals.once("SIGINT", close);
+  signals.once("SIGTERM", close);
+}
+
 function seededRandom(seed: string): () => number {
   let state = 2_166_136_261;
   for (const character of seed) {
@@ -93,6 +118,7 @@ async function start(): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
   const server = buildServer({ publicOrigin: process.env.PUBLIC_ORIGIN });
   await server.listen({ host: "0.0.0.0", port });
+  registerGracefulShutdown(server);
 }
 
 const entrypoint = process.argv[1]
