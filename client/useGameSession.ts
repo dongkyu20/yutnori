@@ -10,6 +10,11 @@ import type {
 import { createGameSocket, type GameSocket } from "./socket";
 
 const RECONNECT_TOKEN_KEY = "hanpanyut.reconnectToken";
+const TERMINAL_SESSION_ERROR_CODES = new Set([
+  "ROOM_NOT_FOUND",
+  "SESSION_NOT_FOUND",
+  "INVALID_SESSION",
+]);
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "offline";
 
@@ -72,10 +77,13 @@ export function useGameSession(): GameSession {
     });
     socket.on("server_error", (nextError) => {
       setError(nextError);
-      if (nextError.code === "ROOM_NOT_FOUND") {
+      if (TERMINAL_SESSION_ERROR_CODES.has(nextError.code)) {
         window.localStorage.removeItem(RECONNECT_TOKEN_KEY);
         setPlayerId(null);
         setSnapshot(null);
+        socket.auth = {};
+        socket.disconnect();
+        setConnectionState("offline");
       }
     });
 
