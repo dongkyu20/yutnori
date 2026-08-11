@@ -166,6 +166,21 @@ describe("RoomService lobby lifecycle", () => {
     ).code).toBe("PLAYERS_NOT_READY");
   });
 
+  it("projects the authoritative waiting-room start eligibility and its blocking reason", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host, guest] = createPlayers(service, "individual", ["Host", "Guest"]);
+
+    expect(guest.snapshot).toMatchObject({
+      canStart: false,
+      startEligibilityReason: "모든 참가자가 연결되고 준비되어야 합니다.",
+    });
+
+    const hostReady = dispatch(service, host.playerId, guest.snapshot, { type: "SET_READY", ready: true });
+    const ready = dispatch(service, guest.playerId, hostReady, { type: "SET_READY", ready: true });
+
+    expect(ready).toMatchObject({ canStart: true, startEligibilityReason: null });
+  });
+
   it("requires exactly two ready players in every team", () => {
     const service = new RoomService(new FakeClock().options());
     const sessions = createPlayers(service, "team", [

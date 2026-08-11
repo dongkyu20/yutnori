@@ -28,5 +28,7 @@ export interface PublicGameState {
 export interface PublicRoomSnapshot {
   roomCode: string; version: number; phase: RoomPhase; mode: GameMode; hostPlayerId: string;
   players: Array<{ id: string; nickname: string; connected: boolean; ready: boolean; teamId?: TeamId }>;
+  canStart: boolean;
+  startEligibilityReason: string | null;
   game: PublicGameState | null;
 }

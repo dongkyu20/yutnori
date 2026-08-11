@@ -58,6 +58,14 @@ interface SessionLocation {
   playerId: string;
 }
 
+type StartEligibility =
+  | { canStart: true; reason: null }
+  | {
+    canStart: false;
+    reason: string;
+    code: "NOT_ENOUGH_PLAYERS" | "INVALID_TEAM_COMPOSITION" | "PLAYERS_NOT_READY";
+  };
+
 export interface RoomServiceOptions {
   now: () => number;
   random: () => number;
@@ -387,22 +395,8 @@ export class RoomService {
   }
 
   private startGame(room: Room): void {
-    if (room.mode === "individual") {
-      if (room.players.length < 2) {
-        throw new RoomError("NOT_ENOUGH_PLAYERS", "개인전에는 두 명 이상이 필요합니다.");
-      }
-    } else {
-      const teams: TeamId[] = ["A", "B", "C", "D"];
-      if (
-        room.players.length !== 8 ||
-        teams.some((teamId) => room.players.filter((player) => player.teamId === teamId).length !== 2)
-      ) {
-        throw new RoomError("INVALID_TEAM_COMPOSITION", "각 팀에 두 명이 필요합니다.");
-      }
-    }
-    if (room.players.some((player) => !player.connected || !player.ready)) {
-      throw new RoomError("PLAYERS_NOT_READY", "모든 참가자가 준비해야 합니다.");
-    }
+    const eligibility = this.startEligibility(room);
+    if (!eligibility.canStart) throw new RoomError(eligibility.code, eligibility.reason);
 
     room.game = createGame({
       mode: room.mode,
@@ -471,6 +465,37 @@ export class RoomService {
     return room.players.find((player) => player.id === playerId && player.connected);
   }
 
+  private startEligibility(room: Room): StartEligibility {
+    if (room.mode === "individual" && room.players.length < 2) {
+      return {
+        canStart: false,
+        code: "NOT_ENOUGH_PLAYERS",
+        reason: "게임을 시작하려면 2명 이상이 필요합니다.",
+      };
+    }
+    if (room.mode === "team") {
+      const teams: TeamId[] = ["A", "B", "C", "D"];
+      const compositionIsValid = room.players.length === 8 && teams.every(
+        (teamId) => room.players.filter((player) => player.teamId === teamId).length === 2,
+      );
+      if (!compositionIsValid) {
+        return {
+          canStart: false,
+          code: "INVALID_TEAM_COMPOSITION",
+          reason: "각 팀에 2명이 필요합니다.",
+        };
+      }
+    }
+    if (room.players.some((player) => !player.connected || !player.ready)) {
+      return {
+        canStart: false,
+        code: "PLAYERS_NOT_READY",
+        reason: "모든 참가자가 연결되고 준비되어야 합니다.",
+      };
+    }
+    return { canStart: true, reason: null };
+  }
+
   private findPlayer(playerId: string): { room: Room; player: RoomPlayer } {
     const roomCode = this.playerRooms.get(playerId);
     const room = roomCode ? this.rooms.get(roomCode) : undefined;
@@ -515,12 +540,15 @@ export class RoomService {
   }
 
   private snapshot(room: Room): PublicRoomSnapshot {
+    const eligibility = this.startEligibility(room);
     return {
       roomCode: room.roomCode,
       version: room.version,
       phase: room.phase,
       mode: room.mode,
       hostPlayerId: room.hostPlayerId,
+      canStart: eligibility.canStart,
+      startEligibilityReason: eligibility.reason,
       players: room.players.map((player) => ({
         id: player.id,
         nickname: player.nickname,

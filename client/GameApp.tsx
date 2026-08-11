@@ -1,6 +1,7 @@
 "use client";
 
 import { Lobby } from "./components/Lobby";
+import { WaitingRoom } from "./components/WaitingRoom";
 import { useGameSession } from "./useGameSession";
 
 export function GameApp() {
@@ -8,5 +9,15 @@ export function GameApp() {
 
   if (!session.snapshot) return <Lobby session={session} />;
 
-  return <main><p>참가자들을 기다리고 있습니다.</p></main>;
+  if (session.snapshot.phase === "waiting") {
+    return (
+      <WaitingRoom
+        snapshot={session.snapshot}
+        playerId={session.playerId}
+        sendCommand={session.sendCommand}
+      />
+    );
+  }
+
+  return <main><p>게임이 진행 중입니다.</p></main>;
 }
