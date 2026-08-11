@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type { ClientCommand } from "./protocol";
 export const normalizeNickname = (value: string) => value.trim().replace(/\s+/g, " ");
-export const nicknameSchema = z.string().transform(normalizeNickname).pipe(z.string().min(2).max(12));
+export const nicknameSchema = z
+  .string()
+  .transform(normalizeNickname)
+  .pipe(z.string().min(2).max(12).regex(/^[A-Za-z\uAC00-\uD7A3]+$/));
 export const roomCodeSchema = z.string().trim().toUpperCase().regex(/^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/);
 const versioned = { roomVersion: z.number().int().nonnegative(), requestId: z.string().uuid() };
 export const clientCommandSchema = z.discriminatedUnion("type", [

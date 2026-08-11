@@ -35,3 +35,13 @@ The initializer's source/config files and .gitignore are included in the follow-
 ## Concerns
 
 The generated starter build script uses POSIX inline environment-variable syntax and does not execute as-is on Windows PowerShell. The equivalent build completed when `WRANGLER_LOG_PATH` was set in PowerShell first.
+
+## Nickname validation fix
+
+Added test coverage in `tests/unit/schemas.test.ts` for emoji, whitespace, digit, and 13-character rejection plus 2- and 12-character acceptance. RED: the focused suite failed for emoji, whitespace, and digit inputs because the schema only enforced length. GREEN: constrained normalized nicknames to ASCII English letters or Hangul syllables while retaining the 2–12 character limit.
+
+Commands and results:
+
+- `npm test -- tests/unit/schemas.test.ts`: 10 tests passed.
+- `npm test`: 10 tests passed.
+- `npm run build`: completed successfully.
