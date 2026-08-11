@@ -202,7 +202,7 @@ describe("useGameSession terminal reconnect errors", () => {
     const server = servers.at(-1);
     if (!server) throw new Error("Test gateway server is missing");
     const serverStopped = new Promise<void>((resolve, reject) => {
-      server.server.close((error) => error ? reject(error) : resolve());
+      server.server.close((error?: Error) => error ? reject(error) : resolve());
     });
     const recoveredSocket = [...gateway.io.sockets.sockets.values()][0];
     recoveredSocket.conn.close();

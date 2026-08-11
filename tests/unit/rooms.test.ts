@@ -19,6 +19,7 @@ class FakeClock {
   executed = 0;
 
   readonly options = (random: () => number = () => 0.75): RoomServiceOptions => ({
+    actionTimeoutMs: 45_000,
     now: () => this.nowMs,
     random,
     schedule: (fn, ms) => {

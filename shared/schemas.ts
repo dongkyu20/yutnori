@@ -19,4 +19,5 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("SELECT_ROUTE"), routeId: z.string().min(1), ...versioned }).strict(),
   z.object({ type: z.literal("REACT"), emoji: z.enum(["\uD83D\uDC4F", "\uD83D\uDD25", "\uD83D\uDE2E", "\uD83C\uDF89"]) }).strict(),
 ]);
-export const parseClientCommand = (raw: unknown) => clientCommandSchema.safeParse(raw) as z.SafeParseReturnType<unknown, ClientCommand>;
+export const parseClientCommand = (raw: unknown): z.ZodSafeParseResult<ClientCommand> =>
+  clientCommandSchema.safeParse(raw);
