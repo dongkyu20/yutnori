@@ -57,6 +57,33 @@ describe("YutBoard", () => {
     expect(screen.getAllByTestId(/^board-node-(?:D\d_\d|CENTER)$/)).toHaveLength(9);
   });
 
+  it("draws the CENTER_B shortcut through D4 and terminates it at O15", () => {
+    render(
+      <YutBoard
+        game={createGame()}
+        players={players}
+        playerId="player-a"
+        onSelectPiece={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    const centerBPath = screen.getAllByTestId(/^board-segment-center-b-/);
+    expect(centerBPath.map((segment) => [
+      segment.getAttribute("data-from"),
+      segment.getAttribute("data-to"),
+    ])).toEqual([
+      ["O10", "D3_1"],
+      ["D3_1", "D3_2"],
+      ["D3_2", "CENTER"],
+      ["CENTER", "D4_2"],
+      ["D4_2", "D4_1"],
+      ["D4_1", "O15"],
+    ]);
+    expect(screen.getByTestId("board-node-D4_1")).toHaveAttribute("data-node-y", "32");
+    expect(screen.queryByTestId("board-segment-center-b-D4_1-O0")).not.toBeInTheDocument();
+  });
+
   it("groups a stack with team text and enables only server-provided legal pieces", async () => {
     const user = userEvent.setup();
     const onSelectPiece = vi.fn();

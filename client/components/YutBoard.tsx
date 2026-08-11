@@ -15,8 +15,33 @@ const NODE_COORDINATES: Readonly<Record<string, BoardCoordinate>> = {
   O18: { x: 92, y: 58 }, O19: { x: 92, y: 75 },
   D1_1: { x: 25, y: 75 }, D1_2: { x: 42, y: 58 }, CENTER: { x: 50, y: 50 },
   D2_2: { x: 58, y: 42 }, D2_1: { x: 75, y: 25 }, D3_1: { x: 25, y: 25 },
-  D3_2: { x: 42, y: 42 }, D4_2: { x: 58, y: 58 }, D4_1: { x: 75, y: 75 },
+  D3_2: { x: 42, y: 42 }, D4_2: { x: 66, y: 48 }, D4_1: { x: 82, y: 32 },
 };
+
+type BoardSegment = { from: string; to: string; route: "outer" | "center-a" | "center-b" };
+
+const OUTER_SEGMENTS: BoardSegment[] = Array.from({ length: 19 }, (_, index) => ({
+  from: `O${index}`,
+  to: `O${index + 1}`,
+  route: "outer",
+}));
+
+const BOARD_SEGMENTS: readonly BoardSegment[] = [
+  ...OUTER_SEGMENTS,
+  { from: "O19", to: "O0", route: "outer" },
+  { from: "O5", to: "D1_1", route: "center-a" },
+  { from: "D1_1", to: "D1_2", route: "center-a" },
+  { from: "D1_2", to: "CENTER", route: "center-a" },
+  { from: "CENTER", to: "D2_2", route: "center-a" },
+  { from: "D2_2", to: "D2_1", route: "center-a" },
+  { from: "D2_1", to: "O15", route: "center-a" },
+  { from: "O10", to: "D3_1", route: "center-b" },
+  { from: "D3_1", to: "D3_2", route: "center-b" },
+  { from: "D3_2", to: "CENTER", route: "center-b" },
+  { from: "CENTER", to: "D4_2", route: "center-b" },
+  { from: "D4_2", to: "D4_1", route: "center-b" },
+  { from: "D4_1", to: "O15", route: "center-b" },
+];
 
 type Piece = PublicGameState["pieces"][number];
 
@@ -42,6 +67,19 @@ function nodeStyle(nodeId: string): CSSProperties {
   return {
     "--node-x": `${coordinate.x}%`,
     "--node-y": `${coordinate.y}%`,
+  } as CSSProperties;
+}
+
+function segmentStyle(segment: BoardSegment): CSSProperties {
+  const from = NODE_COORDINATES[segment.from];
+  const to = NODE_COORDINATES[segment.to];
+  const deltaX = to.x - from.x;
+  const deltaY = to.y - from.y;
+  return {
+    "--segment-x": `${from.x}%`,
+    "--segment-y": `${from.y}%`,
+    "--segment-length": `${Math.hypot(deltaX, deltaY)}%`,
+    "--segment-angle": `${Math.atan2(deltaY, deltaX) * 180 / Math.PI}deg`,
   } as CSSProperties;
 }
 
@@ -121,9 +159,29 @@ export function YutBoard({ game, players, playerId, onSelectPiece, onSelectRoute
     <section className="yut-board" aria-labelledby="yut-board-heading">
       <h2 id="yut-board-heading">윷판</h2>
       <div className="yut-board__track" aria-label="윷판 경로">
+        <div className="yut-board__segments" aria-hidden="true">
+          {BOARD_SEGMENTS.map((segment) => (
+            <span
+              key={`${segment.route}:${segment.from}:${segment.to}`}
+              className="yut-board__segment"
+              data-testid={`board-segment-${segment.route}-${segment.from}-${segment.to}`}
+              data-from={segment.from}
+              data-to={segment.to}
+              style={segmentStyle(segment)}
+            />
+          ))}
+        </div>
         <ol className="yut-board__nodes">
           {Object.keys(NODE_COORDINATES).map((nodeId) => (
-            <li key={nodeId} data-testid={`board-node-${nodeId}`} className="yut-board__node" style={nodeStyle(nodeId)} aria-label={describeNode(nodeId)} />
+            <li
+              key={nodeId}
+              data-testid={`board-node-${nodeId}`}
+              data-node-x={NODE_COORDINATES[nodeId].x}
+              data-node-y={NODE_COORDINATES[nodeId].y}
+              className="yut-board__node"
+              style={nodeStyle(nodeId)}
+              aria-label={describeNode(nodeId)}
+            />
           ))}
         </ol>
         <div className="yut-board__pieces">{boardGroups.map(renderPiece)}</div>

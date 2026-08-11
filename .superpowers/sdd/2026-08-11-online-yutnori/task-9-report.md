@@ -90,3 +90,34 @@ Modified:
 
 - No blocking concern remains.
 - The board has a minimal mobile stacking breakpoint only; detailed responsive chrome is intentionally deferred to Task 10.
+
+## Review round 1/5
+
+Addressed both Important review findings with a new RED/GREEN cycle.
+
+RED command:
+
+```text
+.\node_modules\.bin\vitest.cmd run tests/unit/reducer.test.ts tests/ui/YutBoard.test.tsx tests/ui/TurnPanel.test.tsx
+```
+
+Observed RED:
+
+- 2 focused tests failed while 28 passed.
+- The board test could not find canonical `CENTER_B` segment metadata and exposed the old D4 coordinates that pointed toward O0.
+- The rapid-animation test observed the same stick DOM subtree for `event-2` and `event-3`, proving that the boolean animation flag did not restart CSS within the 650 ms window.
+
+Minimal fixes:
+
+- Replaced the full-X board background with explicit CSS segment elements. Each segment exposes its physical `data-from`/`data-to` endpoints and draws through a gradient pseudo-element.
+- Moved D4 nodes into the upper-right quadrant and represented the authoritative path `O10 → D3_1 → D3_2 → CENTER → D4_2 → D4_1 → O15`; no D4 segment targets O0.
+- Keyed the animated stick subtree by `lastThrow.eventId`, so every distinct authoritative throw remounts and triggers a fresh animation even while the prior timer remains active.
+
+GREEN and verification evidence:
+
+- Focused reducer/board/panel: 3 files, 30/30 passed.
+- Full Vitest suite: 13 files, 120/120 passed.
+- ESLint: exit 0, no diagnostics.
+- `vinext build`: exit 0; all five build environments completed.
+
+The deferred Minor same-team-second-member coverage was intentionally not changed in this review round.

@@ -44,7 +44,7 @@ export function TurnPanel({ game, currentPlayerNickname, isCurrentPlayer, onThro
       <section className="yut-result" aria-labelledby="yut-result-heading">
         <h3 id="yut-result-heading">윷 결과</h3>
         <p>{game.lastThrow ? `던진 결과: ${RESULT_NAMES[game.lastThrow.result]}` : "아직 던진 결과가 없습니다"}</p>
-        <ol className="yut-sticks" data-testid="yut-sticks" data-animating={animating ? "true" : undefined} aria-label="윷가락 네 개">
+        <ol key={currentThrowEventId ?? "no-throw"} className="yut-sticks" data-testid="yut-sticks" data-animating={animating ? "true" : undefined} aria-label="윷가락 네 개">
           {(game.lastThrow?.sticks ?? [false, false, false, false]).map((flat, index) => (
             <li key={index} className={`yut-stick${flat ? " yut-stick--flat" : ""}`} aria-label={`${index + 1}번 윷가락: ${flat ? "평평한 면" : "둥근 면"}`}>
               <span aria-hidden="true">{flat ? "배" : "등"}</span>

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PublicGameState, PublicRoomSnapshot } from "../../shared/protocol";
@@ -31,6 +31,7 @@ describe("TurnPanel", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("announces the current turn, shows stage-specific Korean guidance, and disables another player's action", () => {
@@ -133,6 +134,50 @@ describe("TurnPanel", () => {
       />,
     );
     expect(screen.getByTestId("yut-sticks")).toHaveAttribute("data-animating", "true");
+  });
+
+  it("restarts the stick animation for a second throw before the first animation ends", () => {
+    vi.useFakeTimers();
+    const initial = createGame({
+      turnStage: "AWAITING_PIECE",
+      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
+    });
+    const { rerender } = render(
+      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
+    );
+
+    rerender(
+      <TurnPanel
+        game={{
+          ...initial,
+          lastThrow: { eventId: "event-2", result: "DO", sticks: [true, false, false, false] },
+        }}
+        currentPlayerNickname="민수"
+        isCurrentPlayer
+        onThrow={() => undefined}
+      />,
+    );
+    const firstAnimatedSticks = screen.getByTestId("yut-sticks");
+    expect(firstAnimatedSticks).toHaveAttribute("data-animating", "true");
+
+    act(() => vi.advanceTimersByTime(100));
+    rerender(
+      <TurnPanel
+        game={{
+          ...initial,
+          lastThrow: { eventId: "event-3", result: "DO", sticks: [true, false, false, false] },
+        }}
+        currentPlayerNickname="민수"
+        isCurrentPlayer
+        onThrow={() => undefined}
+      />,
+    );
+    const secondAnimatedSticks = screen.getByTestId("yut-sticks");
+    expect(secondAnimatedSticks).not.toBe(firstAnimatedSticks);
+    expect(secondAnimatedSticks).toHaveAttribute("data-animating", "true");
+
+    act(() => vi.advanceTimersByTime(650));
+    expect(screen.getByTestId("yut-sticks")).not.toHaveAttribute("data-animating", "true");
   });
 
   it("sends throw intent with the current room version and a UUID", async () => {
