@@ -137,6 +137,7 @@ button, input, select, textarea { min-height: 44px; }
   .game-screen__log { order: 3; }
   .game-screen__players, .game-screen__log { position: static; }
   .panel-toggle { display: block; }
+  .game-panel--collapsed { display: none; }
   .event-log__list { max-height: 16rem; }
   .yut-board { padding: .6rem; }
   .yut-piece { min-width: 44px; min-height: 44px; }

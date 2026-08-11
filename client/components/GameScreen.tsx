@@ -72,7 +72,11 @@ export function GameScreen({
           >
             참가자 패널 {playersOpen ? "접기" : "펼치기"}
           </button>
-          <section id="game-player-panel" aria-label="참가자" hidden={!playersOpen}>
+          <section
+            id="game-player-panel"
+            className={playersOpen ? "game-panel" : "game-panel game-panel--collapsed"}
+            aria-label="참가자"
+          >
             <h2>참가자</h2>
             <ul className="game-player-list">
               {snapshot.players.map((player) => (
@@ -122,7 +126,12 @@ export function GameScreen({
           >
             경기 기록 패널 {logOpen ? "접기" : "펼치기"}
           </button>
-          <div id="game-event-panel" hidden={!logOpen}><EventLog events={game.events} /></div>
+          <div
+            id="game-event-panel"
+            className={logOpen ? "game-panel" : "game-panel game-panel--collapsed"}
+          >
+            <EventLog events={game.events} />
+          </div>
         </aside>
       </div>
 

@@ -31,6 +31,10 @@ export interface GameSession {
   leaveRoom: () => void;
 }
 
+export interface UseGameSessionOptions {
+  socketFactory?: (reconnectToken: string | null) => GameSocket;
+}
+
 function offlineError(): ServerError {
   return {
     code: "OFFLINE",
@@ -44,7 +48,8 @@ function initialConnectionState(): ConnectionState {
   return window.localStorage.getItem(RECONNECT_TOKEN_KEY) ? "reconnecting" : "connecting";
 }
 
-export function useGameSession(): GameSession {
+export function useGameSession(options: UseGameSessionOptions = {}): GameSession {
+  const socketFactory = options.socketFactory ?? createGameSocket;
   const socketRef = useRef<GameSocket | null>(null);
   const nextReactionIdRef = useRef(1);
   const reactionTimersRef = useRef(new Map<number, number>());
@@ -57,17 +62,24 @@ export function useGameSession(): GameSession {
   useEffect(() => {
     const reactionTimers = reactionTimersRef.current;
     const reconnectToken = window.localStorage.getItem(RECONNECT_TOKEN_KEY);
-    const socket = createGameSocket(reconnectToken);
+    const socket = socketFactory(reconnectToken);
     socketRef.current = socket;
 
-    socket.on("connect", () => {
-      setConnectionState("connected");
-    });
-    socket.on("connect_error", () => {
-      setConnectionState("offline");
-    });
-    socket.on("disconnect", () => {
-      setConnectionState("offline");
+    const markReconnecting = () => setConnectionState("reconnecting");
+    const markConnected = () => setConnectionState("connected");
+    const markOffline = () => setConnectionState("offline");
+    socket.io.on("reconnect_attempt", markReconnecting);
+    socket.io.on("reconnect", markConnected);
+    socket.io.on("reconnect_failed", markOffline);
+
+    socket.on("connect", markConnected);
+    socket.on("connect_error", markReconnecting);
+    socket.on("disconnect", (reason) => {
+      setConnectionState(
+        reason === "transport close" || reason === "transport error" || reason === "ping timeout"
+          ? "reconnecting"
+          : "offline",
+      );
     });
     socket.on("session", (session) => {
       window.localStorage.setItem(RECONNECT_TOKEN_KEY, session.reconnectToken);
@@ -106,10 +118,13 @@ export function useGameSession(): GameSession {
     return () => {
       for (const timer of reactionTimers.values()) window.clearTimeout(timer);
       reactionTimers.clear();
+      socket.io.off("reconnect_attempt", markReconnecting);
+      socket.io.off("reconnect", markConnected);
+      socket.io.off("reconnect_failed", markOffline);
       socket.disconnect();
       socketRef.current = null;
     };
-  }, []);
+  }, [socketFactory]);
 
   const emit = useCallback((command: unknown): boolean => {
     const socket = socketRef.current;

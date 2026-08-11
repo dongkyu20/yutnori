@@ -1,11 +1,13 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
+import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EmojiReactions } from "../../client/components/EmojiReactions";
 import { EventLog } from "../../client/components/EventLog";
 import { GameScreen } from "../../client/components/GameScreen";
+import { Lobby, type LobbySessionApi } from "../../client/components/Lobby";
 import { ResultDialog } from "../../client/components/ResultDialog";
 import type { InRoomCommand, PublicRoomSnapshot } from "../../shared/protocol";
 
@@ -43,7 +45,7 @@ describe("finished game chrome", () => {
     vi.useRealTimers();
   });
 
-  it("keeps the newest 50 events in chronological order and announces only an append", () => {
+  it("keeps the newest 50 events in chronological order and announces each appended event once by id", () => {
     const events = Array.from({ length: 51 }, (_, index) => ({
       id: `event-${index + 1}`,
       message: `기록 ${index + 1}`,
@@ -51,17 +53,26 @@ describe("finished game chrome", () => {
     }));
     const { rerender } = render(<EventLog events={events} />);
 
-    const list = screen.getByRole("log", { name: "경기 기록" });
+    const list = screen.getByRole("list", { name: "경기 기록" });
     expect(list.children).toHaveLength(50);
     expect(list.firstElementChild).toHaveTextContent("기록 2");
     expect(list.lastElementChild).toHaveTextContent("기록 51");
     expect(screen.getByRole("status", { name: "새 경기 기록" })).toBeEmptyDOMElement();
 
-    rerender(<EventLog events={[...events, { id: "event-52", message: "지우님이 윷을 던졌습니다.", createdAt: 52 }]} />);
-    expect(screen.getByRole("status", { name: "새 경기 기록" })).toHaveTextContent("지우님이 윷을 던졌습니다.");
+    expect(screen.getAllByRole("status", { name: "새 경기 기록" })).toHaveLength(1);
+    const sameMessage = "지우님이 윷을 던졌습니다.";
+    rerender(<EventLog events={[...events, { id: "event-52", message: sameMessage, createdAt: 52 }]} />);
+    const liveRegion = screen.getByRole("status", { name: "새 경기 기록" });
+    const firstAnnouncement = liveRegion.firstElementChild;
+    expect(firstAnnouncement).toHaveTextContent(sameMessage);
 
-    rerender(<EventLog events={[...events, { id: "event-52", message: "지우님이 윷을 던졌습니다.", createdAt: 52 }]} />);
-    expect(screen.getByRole("status", { name: "새 경기 기록" })).toBeEmptyDOMElement();
+    rerender(<EventLog events={[
+      ...events,
+      { id: "event-52", message: sameMessage, createdAt: 52 },
+      { id: "event-53", message: sameMessage, createdAt: 53 },
+    ]} />);
+    expect(liveRegion.firstElementChild).toHaveTextContent(sameMessage);
+    expect(liveRegion.firstElementChild).not.toBe(firstAnnouncement);
   });
 
   it("offers exactly the four protocol reactions and ignores rapid repeat sends for 800ms", async () => {
@@ -113,6 +124,28 @@ describe("finished game chrome", () => {
     expect(onReturnToLobby).toHaveBeenCalledTimes(1);
   });
 
+  it("moves focus to the real lobby after the result action replaces the game screen", async () => {
+    const user = userEvent.setup();
+    const lobbySession: LobbySessionApi = {
+      connectionState: "connected",
+      createRoom: () => undefined,
+      joinRoom: () => undefined,
+    };
+    function ResultToLobbyHarness() {
+      const [inGame, setInGame] = useState(true);
+      return inGame
+        ? <ResultDialog winnerName="민수" onReturnToLobby={() => setInGame(false)} />
+        : <Lobby session={lobbySession} />;
+    }
+    render(<ResultToLobbyHarness />);
+    const returnButton = screen.getByRole("button", { name: "로비로 돌아가기" });
+
+    await user.click(returnButton);
+
+    expect(returnButton.isConnected).toBe(false);
+    expect(screen.getByRole("heading", { name: "같이 던지고, 함께 웃는 한판" })).toHaveFocus();
+  });
+
   it.each([
     ["offline", "연결이 끊겼습니다. 연결 상태를 확인해 주세요."],
     ["reconnecting", "게임에 다시 연결하는 중입니다."],
@@ -153,7 +186,8 @@ describe("finished game chrome", () => {
     await user.click(playersToggle);
     expect(playersToggle).toHaveAccessibleName("참가자 패널 펼치기");
     expect(playersToggle).toHaveAttribute("aria-expanded", "false");
-    expect(playersPanel).toHaveAttribute("hidden");
+    expect(playersPanel).not.toHaveAttribute("hidden");
+    expect(playersPanel).toHaveClass("game-panel--collapsed");
     expect(logToggle).toHaveAttribute("aria-expanded", "true");
   });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GameMode, ServerError } from "../../shared/protocol";
 import { nicknameSchema, roomCodeSchema } from "../../shared/schemas";
 import type { ConnectionState } from "../useGameSession";
@@ -13,6 +13,7 @@ export interface LobbySessionApi {
 }
 
 export function Lobby({ session }: { session: LobbySessionApi }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [nickname, setNickname] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [mode, setMode] = useState<GameMode>("individual");
@@ -22,6 +23,10 @@ export function Lobby({ session }: { session: LobbySessionApi }) {
 
   const nicknameResult = nicknameSchema.safeParse(nickname);
   const roomCodeResult = roomCodeSchema.safeParse(roomCode);
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, []);
 
   const validateNickname = (): string | null => {
     if (!nicknameResult.success) {
@@ -60,7 +65,7 @@ export function Lobby({ session }: { session: LobbySessionApi }) {
     <main>
       <header>
         <p>한판윷</p>
-        <h1>같이 던지고, 함께 웃는 한판</h1>
+        <h1 ref={headingRef} tabIndex={-1}>같이 던지고, 함께 웃는 한판</h1>
         <p>이름만 정하면 바로 친구들과 윷놀이를 시작할 수 있어요.</p>
       </header>
 

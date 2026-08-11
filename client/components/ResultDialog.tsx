@@ -16,7 +16,9 @@ export function ResultDialog({ winnerName, onReturnToLobby }: ResultDialogProps)
       ? document.activeElement
       : null;
     returnButtonRef.current?.focus();
-    return () => previouslyFocused?.focus();
+    return () => {
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
   }, []);
 
   const trapFocus = (event: KeyboardEvent<HTMLDialogElement>) => {

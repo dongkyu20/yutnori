@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createGateway, type Gateway } from "../../server/gateway";
 import { RoomService } from "../../server/rooms";
 import type { ServerError } from "../../shared/protocol";
+import { createGameSocket } from "../../client/socket";
 import { useGameSession } from "../../client/useGameSession";
 
 const RECONNECT_TOKEN_KEY = "hanpanyut.reconnectToken";
@@ -159,4 +160,57 @@ describe("useGameSession terminal reconnect errors", () => {
     expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBeNull();
     unmount();
   });
+
+  it("reports reconnecting through a transport retry, connected after recovery, and offline after retries fail", async () => {
+    const roomService = new RoomService();
+    const issuedSession = roomService.createRoom({ nickname: "Host", mode: "individual" });
+    const gateway = await startGateway(roomService);
+    process.env.NEXT_PUBLIC_GAME_SERVER_URL = serverUrls[0];
+    window.localStorage.setItem(RECONNECT_TOKEN_KEY, issuedSession.reconnectToken);
+    const connectionStates: string[] = [];
+    let connections = 0;
+    const reconnectAttempts: number[] = [];
+    gateway.io.on("connection", () => { connections += 1; });
+    const socketFactory = (reconnectToken: string | null) => {
+      const socket = createGameSocket(reconnectToken, {
+        reconnection: true,
+        reconnectionAttempts: 3,
+        reconnectionDelay: 25,
+        reconnectionDelayMax: 75,
+        timeout: 250,
+      });
+      socket.io.on("reconnect_attempt", (attempt) => reconnectAttempts.push(attempt));
+      return socket;
+    };
+    const { result, unmount } = renderHook(() => {
+      const session = useGameSession({ socketFactory });
+      connectionStates.push(session.connectionState);
+      return session;
+    });
+
+    await waitFor(() => expect(result.current.connectionState).toBe("connected"));
+    const firstSocket = [...gateway.io.sockets.sockets.values()][0];
+    firstSocket.conn.close();
+
+    await waitFor(() => expect(connectionStates).toContain("reconnecting"));
+    await waitFor(() => {
+      expect(result.current.connectionState).toBe("connected");
+      expect(connections).toBe(2);
+    }, { timeout: 5000 });
+    reconnectAttempts.length = 0;
+
+    const server = servers.at(-1);
+    if (!server) throw new Error("Test gateway server is missing");
+    const serverStopped = new Promise<void>((resolve, reject) => {
+      server.server.close((error) => error ? reject(error) : resolve());
+    });
+    const recoveredSocket = [...gateway.io.sockets.sockets.values()][0];
+    recoveredSocket.conn.close();
+    server.server.closeAllConnections();
+    await serverStopped;
+    await waitFor(() => expect(result.current.connectionState).toBe("reconnecting"));
+    await waitFor(() => expect(reconnectAttempts).toEqual([1, 2, 3]), { timeout: 8000 });
+    await waitFor(() => expect(result.current.connectionState).toBe("offline"), { timeout: 8000 });
+    unmount();
+  }, 12000);
 });
