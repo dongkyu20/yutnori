@@ -45,3 +45,18 @@ All commands used the workspace-local Vitest/ESLint/Vinext binaries with the pro
 ## Concerns
 
 - The build emits Vinext's pre-existing informational notice that route classification is unknown; it does not fail the build.
+
+## Fix round 1/5 — Member start control
+
+Root review identified that a disabled `게임 시작` button was still rendered for non-hosts. The binding requirement is stricter: members may see the server-provided eligibility reason but no start control.
+
+### RED
+
+- Updated the real Testing Library member test to assert that `queryByRole("button", { name: "게임 시작" })` is absent while the eligibility reason remains visible.
+- `vitest run tests/ui/WaitingRoom.test.tsx` failed as expected: the member snapshot rendered a disabled `게임 시작` button.
+
+### GREEN
+
+- Removed the non-host button branch; only `isHost` renders the start button.
+- Focused verification: `vitest run tests/ui/WaitingRoom.test.tsx tests/unit/rooms.test.ts` — 2 files, 36 passing tests.
+- Full verification: `vitest run` — 11 files, 103 passing tests; ESLint completed with no findings; `vinext build` completed successfully.

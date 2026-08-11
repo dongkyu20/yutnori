@@ -100,9 +100,7 @@ export function WaitingRoom({ snapshot, playerId, sendCommand }: WaitingRoomProp
           >
             게임 시작
           </button>
-        ) : (
-          <button type="button" disabled>게임 시작</button>
-        )}
+        ) : null}
       </section>
     </main>
   );

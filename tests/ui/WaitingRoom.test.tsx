@@ -86,14 +86,14 @@ describe("WaitingRoom", () => {
     ]);
   });
 
-  it("keeps host-only controls unavailable to a member and disables invalid start", () => {
+  it("keeps host-only controls absent for a member while showing invalid-start feedback", () => {
     renderWaitingRoom(createSnapshot({
       canStart: false,
       startEligibilityReason: "게임을 시작하려면 2명 이상이 필요합니다.",
     }), "guest");
 
     expect(screen.queryByRole("button", { name: /내보내기/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "게임 시작" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "게임 시작" })).not.toBeInTheDocument();
     expect(screen.getByText("게임을 시작하려면 2명 이상이 필요합니다.")).toBeInTheDocument();
   });
 
