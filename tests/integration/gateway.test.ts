@@ -97,6 +97,24 @@ describe("Socket.IO gateway", () => {
     return `http://127.0.0.1:${port}`;
   }
 
+  async function startRateLimitedServer(input: {
+    now: () => number;
+    maxCommands: number;
+    maxReactions: number;
+  }) {
+    const server = buildServer({
+      publicOrigin: PUBLIC_ORIGIN,
+      gatewayRateLimit: {
+        ...input,
+        windowMs: 1_000,
+      },
+    });
+    servers.push(server);
+    await server.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = server.server.address() as AddressInfo;
+    return `http://127.0.0.1:${port}`;
+  }
+
   async function openSocket(url: string, reconnectToken?: string): Promise<Socket> {
     const socket = connect(url, {
       autoConnect: false,
@@ -436,5 +454,52 @@ describe("Socket.IO gateway", () => {
     expect((await invalidErrorEvent).code).toBe("INVALID_COMMAND");
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(leakedReaction).toBe(false);
+  });
+
+  it("rate limits reactions without broadcasting them and resets the quota after the window", async () => {
+    let now = 0;
+    const url = await startRateLimitedServer({
+      now: () => now,
+      maxCommands: 30,
+      maxReactions: 1,
+    });
+    const { host, guest, guestSession } = await createAndJoin(url);
+    const reactions: ReactionPayload[] = [];
+    host.on("reaction", (reaction: ReactionPayload) => reactions.push(reaction));
+
+    const firstReaction = event<ReactionPayload>(host, "reaction");
+    guest.emit("command", { type: "REACT", emoji: "👏" });
+    expect(await firstReaction).toEqual({ playerId: guestSession.playerId, emoji: "👏" });
+
+    const limitedError = event<ServerError>(guest, "server_error");
+    guest.emit("command", { type: "REACT", emoji: "🔥" });
+    expect(await limitedError).toEqual({
+      code: "RATE_LIMITED",
+      message: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+      recoverable: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(reactions).toEqual([{ playerId: guestSession.playerId, emoji: "👏" }]);
+
+    now = 1_000;
+    const resetReaction = event<ReactionPayload>(host, "reaction");
+    guest.emit("command", { type: "REACT", emoji: "🎉" });
+    expect(await resetReaction).toEqual({ playerId: guestSession.playerId, emoji: "🎉" });
+  });
+
+  it("counts invalid raw commands against the general per-socket quota", async () => {
+    const url = await startRateLimitedServer({
+      now: () => 0,
+      maxCommands: 1,
+      maxReactions: 4,
+    });
+    const socket = await openSocket(url);
+    const invalidError = event<ServerError>(socket, "server_error");
+    socket.emit("command", { type: "NOT_A_COMMAND" });
+    expect((await invalidError).code).toBe("INVALID_COMMAND");
+
+    const limitedError = event<ServerError>(socket, "server_error");
+    socket.emit("command", { type: "CREATE_ROOM", nickname: "Host", mode: "individual" });
+    expect((await limitedError).code).toBe("RATE_LIMITED");
   });
 });

@@ -20,6 +20,7 @@ const ROOM_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const DEFAULT_ACTION_TIMEOUT_MS = 45_000;
 const EMPTY_ROOM_TTL_MS = 10 * 60_000;
 const FINISHED_ROOM_TTL_MS = 30 * 60_000;
+const MAX_PROCESSED_REQUEST_IDS = 256;
 const ROOM_ERROR_MESSAGES = {
   ROOM_NOT_FOUND: "방을 찾을 수 없습니다.",
   GAME_ALREADY_STARTED: "이미 시작된 게임입니다.",
@@ -253,6 +254,10 @@ export class RoomService {
 
     this.applyCommand(room, player, command);
     player.processedRequestIds.add(command.requestId);
+    if (player.processedRequestIds.size > MAX_PROCESSED_REQUEST_IDS) {
+      const oldestRequestId = player.processedRequestIds.values().next().value;
+      if (oldestRequestId !== undefined) player.processedRequestIds.delete(oldestRequestId);
+    }
     room.version += 1;
     const snapshot = this.snapshot(room);
     this.notify(room, snapshot);
@@ -361,7 +366,10 @@ export class RoomService {
     if (room.game.turnStage === "COMPLETE") {
       this.finishRoom(room);
     } else {
-      this.scheduleAction(room, this.options.actionTimeoutMs);
+      const currentPlayer = room.players.find(
+        (player) => player.id === room.game?.currentPlayerId,
+      );
+      this.scheduleAction(room, currentPlayer?.connected ? this.options.actionTimeoutMs : 0);
     }
   }
 

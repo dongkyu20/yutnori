@@ -286,6 +286,34 @@ describe("RoomService lobby lifecycle", () => {
     expect(retried.players[0].ready).toBe(true);
   });
 
+  it("retains only the 256 most recent successful request IDs", () => {
+    const service = new RoomService(new FakeClock().options());
+    const created = service.createRoom({ nickname: "Host", mode: "individual" });
+    const firstCommand = {
+      type: "SET_READY" as const,
+      ready: true,
+      roomVersion: created.snapshot.version,
+      requestId: requestId(),
+    };
+    let current = service.dispatch(created.playerId, firstCommand);
+    let mostRecentCommand = firstCommand;
+
+    for (let index = 0; index < 256; index += 1) {
+      mostRecentCommand = {
+        type: "SET_READY",
+        ready: index % 2 === 0,
+        roomVersion: current.version,
+        requestId: requestId(),
+      };
+      current = service.dispatch(created.playerId, mostRecentCommand);
+    }
+
+    const recentDuplicate = service.dispatch(created.playerId, mostRecentCommand);
+    expect(recentDuplicate.version).toBe(current.version);
+    expect(roomError(() => service.dispatch(created.playerId, firstCommand)).code).toBe("STALE_VERSION");
+    expect(JSON.stringify(current)).not.toContain("processedRequestIds");
+  });
+
   it("rejects a new request carrying a stale room version without changing state", () => {
     const service = new RoomService(new FakeClock().options());
     const created = service.createRoom({ nickname: "Host", mode: "individual" });
@@ -368,6 +396,26 @@ describe("RoomService timers and cleanup", () => {
     expect(clock.executed).toBe(2);
     expect(current.game?.currentPlayerId).toBe(guest.playerId);
     expect(current.game?.turnStage).toBe("AWAITING_THROW");
+  });
+
+  it("schedules an immediate action after a connected player passes the turn to a disconnected player", () => {
+    const clock = new FakeClock();
+    const values = [...Array(6).fill(0.2), 0.9, 0.1, 0.9, 0.9];
+    let index = 0;
+    const service = new RoomService(clock.options(() => values[index++] ?? 0.9));
+    const [host, guest] = readyIndividualGame(service);
+
+    service.disconnect(guest.playerId);
+    let current = service.reconnect(host.reconnectToken).snapshot;
+    current = dispatch(service, host.playerId, current, { type: "THROW_YUT" });
+    current = dispatch(service, host.playerId, current, {
+      type: "SELECT_PIECE",
+      pieceId: current.game!.legalPieceIds[0],
+    });
+
+    expect(current.game?.currentPlayerId).toBe(guest.playerId);
+    expect(current.game?.turnStage).toBe("AWAITING_THROW");
+    expect(clock.scheduledDelays.at(-1)).toBe(0);
   });
 
   it("converts public THROW_YUT into a server-generated internal throw", () => {

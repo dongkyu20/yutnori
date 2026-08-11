@@ -14,6 +14,19 @@ const INVALID_COMMAND: ServerError = {
   recoverable: true,
 };
 
+const RATE_LIMITED: ServerError = {
+  code: "RATE_LIMITED",
+  message: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+  recoverable: true,
+};
+
+const DEFAULT_RATE_LIMIT = {
+  windowMs: 1_000,
+  maxCommands: 30,
+  maxReactions: 4,
+  now: Date.now,
+} satisfies GatewayRateLimitOptions;
+
 const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   ROOM_NOT_FOUND: "방을 찾을 수 없습니다.",
   GAME_ALREADY_STARTED: "이미 시작된 게임입니다.",
@@ -69,6 +82,14 @@ type GatewaySocket = Socket<
 export interface GatewayOptions {
   publicOrigin: string;
   roomService?: RoomService;
+  rateLimit?: Partial<GatewayRateLimitOptions>;
+}
+
+export interface GatewayRateLimitOptions {
+  windowMs: number;
+  maxCommands: number;
+  maxReactions: number;
+  now: () => number;
 }
 
 export interface Gateway {
@@ -82,6 +103,26 @@ function roomChannel(roomCode: string): string {
 
 function emitError(socket: GatewaySocket, error: ServerError): void {
   socket.emit("server_error", error);
+}
+
+interface FixedWindowState {
+  startedAt: number;
+  count: number;
+}
+
+function consumeQuota(
+  state: FixedWindowState,
+  now: number,
+  windowMs: number,
+  maximum: number,
+): boolean {
+  if (now < state.startedAt || now - state.startedAt >= windowMs) {
+    state.startedAt = now;
+    state.count = 0;
+  }
+  if (state.count >= maximum) return false;
+  state.count += 1;
+  return true;
 }
 
 function mapError(error: unknown): ServerError {
@@ -134,6 +175,7 @@ function handleValidatedCommand(
 
 export function createGateway(httpServer: HttpServer, options: GatewayOptions): Gateway {
   const roomService = options.roomService ?? new RoomService();
+  const rateLimit = { ...DEFAULT_RATE_LIMIT, ...options.rateLimit };
   const activeSockets = new Map<string, string>();
   let closing = false;
   const io = new SocketIOServer<
@@ -181,6 +223,9 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
   };
 
   io.on("connection", (socket: GatewaySocket) => {
+    const connectedAt = rateLimit.now();
+    const commandQuota: FixedWindowState = { startedAt: connectedAt, count: 0 };
+    const reactionQuota: FixedWindowState = { startedAt: connectedAt, count: 0 };
     const reconnectToken = socket.handshake.auth.reconnectToken;
     if (reconnectToken !== undefined) {
       if (typeof reconnectToken !== "string" || reconnectToken.length === 0) {
@@ -199,9 +244,21 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
     }
 
     socket.on("command", (raw: unknown) => {
+      const now = rateLimit.now();
+      if (!consumeQuota(commandQuota, now, rateLimit.windowMs, rateLimit.maxCommands)) {
+        emitError(socket, RATE_LIMITED);
+        return;
+      }
       const result = parseClientCommand(raw);
       if (!result.success) {
         emitError(socket, INVALID_COMMAND);
+        return;
+      }
+      if (
+        result.data.type === "REACT" &&
+        !consumeQuota(reactionQuota, now, rateLimit.windowMs, rateLimit.maxReactions)
+      ) {
+        emitError(socket, RATE_LIMITED);
         return;
       }
       try {

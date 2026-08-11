@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
-import { createGateway } from "./gateway";
+import { createGateway, type GatewayRateLimitOptions } from "./gateway";
 import { RoomService } from "./rooms";
 
 const DEFAULT_PORT = 3001;
@@ -22,6 +22,7 @@ interface ServerRoomOptions {
 
 export interface BuildServerOptions {
   cleanupIntervalMs?: number;
+  gatewayRateLimit?: Partial<GatewayRateLimitOptions>;
   publicOrigin?: string;
   roomService?: RoomService;
 }
@@ -105,6 +106,7 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const gateway = createGateway(server.server, {
     publicOrigin: options.publicOrigin ?? DEFAULT_PUBLIC_ORIGIN,
     roomService,
+    rateLimit: options.gatewayRateLimit,
   });
   const cleanupTimer = setInterval(
     () => roomService.removeExpiredRooms(),
