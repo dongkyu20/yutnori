@@ -93,13 +93,16 @@ The same reviewer re-checked the amended tree and marked all four Important find
 ## Files
 
 - `.env.example`
+- `package-lock.json`
 - `package.json`
+- `server/game/reducer.ts`
 - `server/gateway.ts`
 - `server/index.ts`
+- `server/rooms.ts`
 - `tests/integration/gateway.test.ts`
 - `.superpowers/sdd/2026-08-11-online-yutnori/task-6-report.md`
 
-`package-lock.json` was inspected but has no Task 6 diff because all required runtime and test packages were already locked.
+The initial Task 6 commit did not change `package-lock.json`; review fix round 1 moves `tsx` to runtime dependencies and updates the lock accordingly.
 
 ## Self-review
 
@@ -121,4 +124,107 @@ The same reviewer re-checked the amended tree and marked all four Important find
 - A standalone `tsc --noEmit` remains red on pre-existing project-wide configuration errors in `db/index.ts` (`cloudflare:workers`), `worker/index.ts` (Cloudflare globals), and `shared/schemas.ts` (Zod v4 no longer exports `SafeParseReturnType`). Task 6 introduced two Socket.IO event-map diagnostics during development; those were fixed, and no Task 6 file remains in the TypeScript diagnostic output. The required Vinext production build and ESLint both pass.
 - The server defaults `PUBLIC_ORIGIN` to `http://localhost:3000` for local startup when the environment variable is absent. Deployments must set `PUBLIC_ORIGIN` to their actual public web origin.
 - Room state and reconnect sessions intentionally remain process-local. Horizontal scaling would require sticky routing or an explicitly approved shared adapter/store, outside this task.
-- `start` executes TypeScript through `tsx`, which is currently a dev dependency inherited from the starter. Deployments that install with `--omit=dev` must either retain `tsx` at runtime or add a dedicated server compilation output in a later packaging task.
+
+---
+
+# Review Fix Round 1/5
+
+## Findings addressed
+
+1. Added `RoomService.subscribeRemoval()` with `{ roomCode, playerIds }` lifecycle payloads emitted after an expired room is deleted. The gateway subscribes and clears ownership plus force-disconnects every remaining socket before the room code can expose later traffic.
+2. Added typed `GameActionError` rejections for expected reducer input failures. `RoomService` converts only those typed failures to recoverable `RoomError("INVALID_ACTION")`; every unexpected exception now maps to sanitized, non-recoverable `INTERNAL_ERROR`.
+3. Moved `tsx` from `devDependencies` to runtime `dependencies` and synchronized the npm lockfile. The lock also needed two already-referenced optional `@emnapi` records before npm's clean-install consistency check would pass.
+
+## TDD evidence
+
+### Expired-room socket leak RED
+
+Command:
+
+```text
+node_modules\.bin\vitest.cmd run tests\integration\gateway.test.ts -t "evicts connected sockets when a finished room expires"
+```
+
+Result before removal lifecycle wiring: exit 1.
+
+```text
+Test Files  1 failed (1)
+Tests       1 failed | 8 skipped (9)
+AssertionError: expected true to be false
+expect(oldSocket.connected).toBe(false)
+```
+
+GREEN after `subscribeRemoval()` and gateway eviction: exit 0.
+
+```text
+Test Files  1 passed (1)
+Tests       1 passed | 8 skipped (9)
+```
+
+The final form is deterministic: it finishes a real two-player game with injected time/randomness, connects a real socket to the finished room, invokes the exact 30-minute expiry boundary, awaits forced disconnect, reuses the deterministic room code, and confirms the old socket receives zero new snapshots.
+
+### Unexpected-error classification RED
+
+Command:
+
+```text
+node_modules\.bin\vitest.cmd run tests\integration\gateway.test.ts -t "sanitizes an unexpected room-service exception"
+```
+
+Result before the typed boundary: exit 1.
+
+```text
+Test Files  1 failed (1)
+Tests       1 failed | 9 skipped (10)
+Expected: INTERNAL_ERROR / recoverable false
+Received: INVALID_ACTION / recoverable true
+```
+
+GREEN command covering both expected and unexpected branches:
+
+```text
+node_modules\.bin\vitest.cmd run tests\integration\gateway.test.ts -t "unexpected room-service exception|out-of-turn throw"
+```
+
+Result: exit 0.
+
+```text
+Test Files  1 passed (1)
+Tests       2 passed | 8 skipped (10)
+```
+
+The injected service exception carries `secret infrastructure detail` and `secret stack trace`; neither appears in the serialized `ServerError`.
+
+## Production dependency and health smoke
+
+- Lock generation: `pnpm.cmd dlx npm@10.9.2 install --package-lock-only --ignore-scripts` completed. Its broad metadata rewrite was intentionally reduced to the runtime `tsx` edge and the two optional entries required by npm's lock consistency check.
+- First isolated clean install exposed those pre-existing missing optional records: `npm ci` reported missing `@emnapi/core@1.10.0` and `@emnapi/runtime@1.10.0`.
+- Final isolated install: `pnpm.cmd dlx npm@10.9.2 ci --omit=dev --ignore-scripts --no-audit --no-fund` — exit 0; `added 87 packages in 6s`.
+- Production-only start/health: launched `node node_modules/tsx/dist/cli.mjs server/index.ts` from the isolated omit-dev tree with `PORT=43127`; `GET /health` returned `{"status":"ok"}`. The exact process was terminated and the temporary tree was removed.
+
+## Final verification
+
+- Focused gateway: `node_modules\.bin\vitest.cmd run tests\integration\gateway.test.ts` — exit 0; 1 file passed, 10 tests passed.
+- Affected Task 5/reducer suites: `node_modules\.bin\vitest.cmd run tests\unit\rooms.test.ts tests\unit\reducer.test.ts` — exit 0; 2 files passed, 41 tests passed.
+- Full suite: `node_modules\.bin\vitest.cmd run` — exit 0; 8 files passed, 87 tests passed.
+- Production build: `node_modules\.bin\vinext.cmd build` — exit 0; all five phases completed, with the existing route-classification informational note.
+- Lint: `node_modules\.bin\eslint.cmd . --ignore-pattern dist --ignore-pattern .next` — exit 0; no findings.
+- Diff hygiene: `git diff --check` — exit 0.
+
+## Self-review
+
+- Removal events expose only public room/player identities, never tokens or internal session hashes. Listener failures remain isolated after deletion has committed.
+- Expiry eviction reuses the same gateway ownership cleanup as kicks, clears socket session data before force-disconnect, and prevents the disconnect handler from touching already-deleted service state.
+- Expected invalid actions are explicitly typed at reducer input-validation boundaries; reducer invariants and injected infrastructure failures remain ordinary exceptions and cannot be downgraded to recoverable client mistakes.
+- Unexpected errors serialize only the stable Korean internal-error payload. Exception messages and stacks are not copied into any socket event.
+- The omit-dev smoke starts with the runtime dependency graph produced from the committed package/lock pair, not the workspace's development install.
+
+## Remaining concerns
+
+- Standalone `tsc --noEmit` still has the pre-existing Cloudflare global/module and Zod type-alias diagnostics recorded above; required build and lint gates pass.
+- npm's lock-generation audit reported 20 existing dependency advisories (1 low, 6 moderate, 13 high). This fix did not run an audit mutation because dependency upgrades are outside the three approved findings.
+- Memory-only, single-instance room/session behavior remains intentional.
+
+## Fix-round re-review
+
+The independent reviewer marked expired-room eviction, typed error classification, and production-only start all resolved. No new Critical or Important issues were found; verdict: Approved.

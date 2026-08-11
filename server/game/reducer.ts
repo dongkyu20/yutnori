@@ -20,6 +20,13 @@ export interface CreateGameInput {
   players: GamePlayer[];
 }
 
+export class GameActionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GameActionError";
+  }
+}
+
 function createIndividualPieces(players: readonly GamePlayer[]): Piece[] {
   return players.flatMap((player) =>
     Array.from({ length: 4 }, (_, index): Piece => ({
@@ -139,16 +146,16 @@ const RESULT_NAMES: Record<ThrowOutcome["result"], string> = {
 
 function assertCommandActor(state: GameState, command: GameCommand): void {
   if (command.actorId !== state.currentPlayerId) {
-    throw new Error("현재 차례인 참가자만 행동할 수 있습니다.");
+    throw new GameActionError("현재 차례인 참가자만 행동할 수 있습니다.");
   }
   if (state.turnStage === "COMPLETE") {
-    throw new Error("이미 끝난 게임입니다.");
+    throw new GameActionError("이미 끝난 게임입니다.");
   }
 }
 
 function requireStage(state: GameState, expected: GameState["turnStage"]): void {
   if (state.turnStage !== expected) {
-    throw new Error("현재 단계에서 수행할 수 없는 행동입니다.");
+    throw new GameActionError("현재 단계에서 수행할 수 없는 행동입니다.");
   }
 }
 
@@ -220,7 +227,7 @@ function applyPieceSelection(
     state.lastThrow.distance,
   );
   if (!legalPieceIds.includes(command.pieceId)) {
-    throw new Error("선택할 수 없는 말입니다.");
+    throw new GameActionError("선택할 수 없는 말입니다.");
   }
 
   const selectedPiece = state.pieces.find((piece) => piece.id === command.pieceId);
@@ -267,7 +274,7 @@ function applyRouteSelection(
       )
     : undefined;
   if (!option) {
-    throw new Error("선택할 수 없는 경로입니다.");
+    throw new GameActionError("선택할 수 없는 경로입니다.");
   }
 
   return resolveMove(state, state.selectedPieceId, option);

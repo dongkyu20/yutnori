@@ -7,7 +7,12 @@ import type {
 } from "../shared/protocol";
 import { nicknameSchema, roomCodeSchema } from "../shared/schemas";
 import { chooseAutoCommand } from "./autoAction";
-import { applyGameCommand, createGame, toPublicGameState } from "./game/reducer";
+import {
+  applyGameCommand,
+  createGame,
+  GameActionError,
+  toPublicGameState,
+} from "./game/reducer";
 import type { GameState } from "./game/types";
 import { throwYut } from "./game/yut";
 
@@ -74,6 +79,13 @@ export interface RoomChange {
 
 export type RoomChangeListener = (change: RoomChange) => void;
 
+export interface RoomRemoval {
+  roomCode: string;
+  playerIds: string[];
+}
+
+export type RoomRemovalListener = (removal: RoomRemoval) => void;
+
 export class RoomError extends Error {
   constructor(
     readonly code: string,
@@ -111,6 +123,7 @@ export class RoomService {
   private readonly playerRooms = new Map<string, string>();
   private readonly sessions = new Map<string, SessionLocation>();
   private readonly listeners = new Set<RoomChangeListener>();
+  private readonly removalListeners = new Set<RoomRemovalListener>();
 
   constructor(options: Partial<RoomServiceOptions> = {}) {
     this.options = { ...defaultOptions, ...options };
@@ -119,6 +132,11 @@ export class RoomService {
   subscribe(listener: RoomChangeListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  subscribeRemoval(listener: RoomRemovalListener): () => void {
+    this.removalListeners.add(listener);
+    return () => this.removalListeners.delete(listener);
   }
 
   createRoom(input: { nickname: string; mode: GameMode }): SessionResult {
@@ -319,7 +337,17 @@ export class RoomService {
     if (room.phase !== "playing" || !room.game) {
       throw new RoomError("GAME_NOT_PLAYING", ROOM_ERROR_MESSAGES.GAME_NOT_PLAYING);
     }
-    room.game = applyGameCommand(room.game, command);
+    try {
+      room.game = applyGameCommand(room.game, command);
+    } catch (error) {
+      if (error instanceof GameActionError) {
+        throw new RoomError(
+          "INVALID_ACTION",
+          "현재 상태에서 수행할 수 없는 행동입니다.",
+        );
+      }
+      throw error;
+    }
     if (room.game.turnStage === "COMPLETE") {
       this.finishRoom(room);
     } else {
@@ -522,11 +550,26 @@ export class RoomService {
   }
 
   private deleteRoom(room: Room): void {
+    const removal = {
+      roomCode: room.roomCode,
+      playerIds: room.players.map((player) => player.id),
+    };
     if (room.actionTimerId !== null) this.options.cancel(room.actionTimerId);
     for (const player of room.players) {
       this.playerRooms.delete(player.id);
       this.sessions.delete(player.reconnectTokenHash);
     }
     this.rooms.delete(room.roomCode);
+    for (const listener of [...this.removalListeners]) {
+      try {
+        listener(removal);
+      } catch (error) {
+        try {
+          this.options.onListenerError?.(error);
+        } catch {
+          // Diagnostics must not interrupt completed room deletion.
+        }
+      }
+    }
   }
 }

@@ -33,6 +33,7 @@ const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   PLAYERS_NOT_READY: "모든 참가자가 준비해야 합니다.",
   HOST_ONLY: "방장만 수행할 수 있습니다.",
   ROOM_CODE_EXHAUSTED: "방 코드를 생성할 수 없습니다.",
+  INVALID_ACTION: "현재 상태에서 수행할 수 없는 행동입니다.",
 };
 
 interface SocketData {
@@ -91,13 +92,6 @@ function mapError(error: unknown): ServerError {
       recoverable: error.recoverable,
     };
   }
-  if (error instanceof Error) {
-    return {
-      code: "INVALID_ACTION",
-      message: "현재 상태에서 수행할 수 없는 행동입니다.",
-      recoverable: true,
-    };
-  }
   return {
     code: "INTERNAL_ERROR",
     message: "서버 오류가 발생했습니다.",
@@ -153,8 +147,23 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
       callback(null, request.headers.origin === options.publicOrigin);
     },
   });
+
+  const evictPlayer = (playerId: string): void => {
+    const socketId = activeSockets.get(playerId);
+    if (!socketId) return;
+    activeSockets.delete(playerId);
+    const target = io.sockets.sockets.get(socketId);
+    if (!target) return;
+    target.data.playerId = undefined;
+    target.data.roomCode = undefined;
+    target.disconnect(true);
+  };
+
   const unsubscribe = roomService.subscribe(({ roomCode, snapshot }) => {
     io.to(roomChannel(roomCode)).emit("snapshot", snapshot);
+  });
+  const unsubscribeRemoval = roomService.subscribeRemoval(({ playerIds }) => {
+    for (const playerId of playerIds) evictPlayer(playerId);
   });
 
   const attachGatewaySession = (socket: GatewaySocket, session: SessionResult): void => {
@@ -169,17 +178,6 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
     }
     activeSockets.set(session.playerId, socket.id);
     attachSession(socket, session);
-  };
-
-  const evictPlayer = (playerId: string): void => {
-    const socketId = activeSockets.get(playerId);
-    if (!socketId) return;
-    activeSockets.delete(playerId);
-    const target = io.sockets.sockets.get(socketId);
-    if (!target) return;
-    target.data.playerId = undefined;
-    target.data.roomCode = undefined;
-    target.disconnect(true);
   };
 
   io.on("connection", (socket: GatewaySocket) => {
@@ -249,6 +247,7 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
     close: async () => {
       closing = true;
       unsubscribe();
+      unsubscribeRemoval();
       activeSockets.clear();
       await io.close();
     },

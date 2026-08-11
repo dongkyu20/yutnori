@@ -35,6 +35,56 @@ function requestId(sequence: number): string {
   return `00000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`;
 }
 
+function finishDeterministicRoom(service: RoomService) {
+  const host = service.createRoom({ nickname: "Host", mode: "individual" });
+  const guest = service.joinRoom({ roomCode: host.snapshot.roomCode, nickname: "Guest" });
+  let sequence = 100;
+  let snapshot = service.dispatch(host.playerId, {
+    type: "SET_READY",
+    ready: true,
+    roomVersion: guest.snapshot.version,
+    requestId: requestId(sequence++),
+  });
+  snapshot = service.dispatch(guest.playerId, {
+    type: "SET_READY",
+    ready: true,
+    roomVersion: snapshot.version,
+    requestId: requestId(sequence++),
+  });
+  snapshot = service.dispatch(host.playerId, {
+    type: "START_GAME",
+    roomVersion: snapshot.version,
+    requestId: requestId(sequence++),
+  });
+
+  while (snapshot.phase === "playing") {
+    const playerId = snapshot.game!.currentPlayerId;
+    if (snapshot.game!.turnStage === "AWAITING_THROW") {
+      snapshot = service.dispatch(playerId, {
+        type: "THROW_YUT",
+        roomVersion: snapshot.version,
+        requestId: requestId(sequence++),
+      });
+    } else if (snapshot.game!.turnStage === "AWAITING_PIECE") {
+      snapshot = service.dispatch(playerId, {
+        type: "SELECT_PIECE",
+        pieceId: snapshot.game!.legalPieceIds[0],
+        roomVersion: snapshot.version,
+        requestId: requestId(sequence++),
+      });
+    } else if (snapshot.game!.turnStage === "AWAITING_ROUTE") {
+      snapshot = service.dispatch(playerId, {
+        type: "SELECT_ROUTE",
+        routeId: snapshot.game!.legalRoutes[0].routeId,
+        roomVersion: snapshot.version,
+        requestId: requestId(sequence++),
+      });
+    }
+  }
+
+  return { host, roomCode: snapshot.roomCode };
+}
+
 describe("Socket.IO gateway", () => {
   const sockets: Socket[] = [];
   const servers: Array<ReturnType<typeof buildServer>> = [];
@@ -157,6 +207,51 @@ describe("Socket.IO gateway", () => {
     expect(reconnectError?.code).toBe("SESSION_NOT_FOUND");
   });
 
+  it("evicts connected sockets when a finished room expires before its code is reused", async () => {
+    let now = 0;
+    const roomService = new RoomService({
+      now: () => now,
+      random: () => 0.1,
+      schedule: () => Symbol("timer"),
+      cancel: () => undefined,
+    });
+    const finished = finishDeterministicRoom(roomService);
+    const server = buildServer({
+      publicOrigin: PUBLIC_ORIGIN,
+      roomService,
+      cleanupIntervalMs: 60_000,
+    });
+    servers.push(server);
+    await server.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = server.server.address() as AddressInfo;
+    const url = `http://127.0.0.1:${port}`;
+
+    const oldSocket = connect(url, {
+      autoConnect: false,
+      transports: ["websocket"],
+      extraHeaders: { Origin: PUBLIC_ORIGIN },
+      auth: { reconnectToken: finished.host.reconnectToken },
+    });
+    sockets.push(oldSocket);
+    const oldSessionEvent = event<SessionPayload>(oldSocket, "session");
+    const oldSnapshotEvent = event<PublicRoomSnapshot>(oldSocket, "snapshot");
+    oldSocket.connect();
+    await Promise.all([oldSessionEvent, oldSnapshotEvent]);
+    let leakedSnapshots = 0;
+    oldSocket.on("snapshot", () => { leakedSnapshots += 1; });
+
+    const expiredSocketEvent = event(oldSocket, "disconnect");
+    now = 1_800_000;
+    roomService.removeExpiredRooms();
+    await expiredSocketEvent;
+    const replacement = roomService.createRoom({ nickname: "NewHost", mode: "individual" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(replacement.snapshot.roomCode).toBe(finished.roomCode);
+    expect(oldSocket.connected).toBe(false);
+    expect(leakedSnapshots).toBe(0);
+  });
+
   it("issues private sessions and sends both room members the same incremented public snapshot", async () => {
     const url = await startServer();
 
@@ -214,6 +309,37 @@ describe("Socket.IO gateway", () => {
       message: "현재 상태에서 수행할 수 없는 행동입니다.",
       recoverable: true,
     });
+  });
+
+  it("sanitizes an unexpected room-service exception as a non-recoverable internal error", async () => {
+    class FailingRoomService extends RoomService {
+      override createRoom(): never {
+        const error = new Error("secret infrastructure detail");
+        error.stack = "secret stack trace";
+        throw error;
+      }
+    }
+
+    const server = buildServer({
+      publicOrigin: PUBLIC_ORIGIN,
+      roomService: new FailingRoomService(),
+    });
+    servers.push(server);
+    await server.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = server.server.address() as AddressInfo;
+    const socket = await openSocket(`http://127.0.0.1:${port}`);
+    const errorEvent = event<ServerError>(socket, "server_error");
+
+    socket.emit("command", { type: "CREATE_ROOM", nickname: "Host", mode: "individual" });
+    const serverError = await errorEvent;
+
+    expect(serverError).toEqual({
+      code: "INTERNAL_ERROR",
+      message: "서버 오류가 발생했습니다.",
+      recoverable: false,
+    });
+    expect(JSON.stringify(serverError)).not.toContain("secret");
+    expect(JSON.stringify(serverError)).not.toContain("stack");
   });
 
   it("restores the issued player session and broadcasts disconnect and reconnect snapshots", async () => {
