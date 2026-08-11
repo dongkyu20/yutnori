@@ -1,0 +1,4 @@
+@import "tailwindcss";
+:root { --background: #f4ead3; --foreground: #1f2724; --focus-ring: #147d73; --app-font-sans: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
+@theme inline { --color-background: var(--background); --color-foreground: var(--foreground); --font-sans: var(--app-font-sans); }
+:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
