@@ -19,6 +19,7 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL,
+    contextOptions: { reducedMotion: "reduce" },
     headless: true,
     launchOptions: browserExecutable ? { executablePath: browserExecutable } : undefined,
     trace: "retain-on-failure",

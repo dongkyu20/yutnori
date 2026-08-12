@@ -11,6 +11,8 @@ import {
   readyPlayer,
   roomVersion,
   startGame,
+  waitForVersionAfter,
+  waitForVersionConvergence,
   type BrowserPlayer,
 } from "./helpers";
 
@@ -31,8 +33,7 @@ test("two isolated players create, join, move, and finish the same authoritative
 
     const beforeThrow = await roomVersion(host.page);
     await host.page.getByRole("button", { name: "윷 던지기" }).click();
-    await expect.poll(async () => roomVersion(guest.page)).toBeGreaterThan(beforeThrow);
-    expect(await roomVersion(host.page)).toBe(await roomVersion(guest.page));
+    await waitForVersionAfter(players, beforeThrow);
     expect(await host.page.locator(".yut-result").innerText()).toBe(
       await guest.page.locator(".yut-result").innerText(),
     );
@@ -43,7 +44,7 @@ test("two isolated players create, join, move, and finish the same authoritative
     }
     expect(await pieceState(host.page)).not.toEqual(initialPieces);
     expect(await pieceState(host.page)).toEqual(await pieceState(guest.page));
-    expect(await roomVersion(host.page)).toBe(await roomVersion(guest.page));
+    await waitForVersionConvergence(players);
 
     await playToWinner(players);
     const hostResult = host.page.getByRole("dialog", { name: "경기 결과" });

@@ -8,9 +8,44 @@ export interface BrowserPlayer {
   page: Page;
 }
 
+export type LegalActionResult =
+  | { kind: "advanced"; version: number }
+  | { kind: "finished" };
+
+type LegalActionReadiness = "throw" | "piece" | "route" | "waiting";
+type EnabledLegalAction = Exclude<LegalActionReadiness, "waiting">;
+
+type LegalActionProbe =
+  | { kind: "finished" }
+  | { kind: "waiting" }
+  | {
+    action: EnabledLegalAction;
+    actor: BrowserPlayer;
+    beforeVersion: number;
+    kind: "action";
+    nickname: string;
+  };
+type ReadyLegalActionProbe = Exclude<LegalActionProbe, { kind: "waiting" }>;
+
+const LEGAL_ACTION_DEADLINE_MS = 10_000;
+// Functional E2E runs with reduced motion, so a stale action can be abandoned well within the 1s turn deadline.
+const LEGAL_ACTION_CLICK_TIMEOUT_MS = 500;
+
+interface CanonicalGameSnapshot {
+  currentNickname: string | null;
+  finished: boolean;
+}
+
+interface ActorGameSnapshot {
+  action: LegalActionReadiness;
+  finished: boolean;
+  version: number;
+}
+
 function projectContextOptions(testInfo: TestInfo) {
   const use = testInfo.project.use;
   return {
+    ...use.contextOptions,
     viewport: use.viewport,
     userAgent: use.userAgent,
     deviceScaleFactor: use.deviceScaleFactor,
@@ -72,11 +107,28 @@ export async function waitForVersionAfter(
   players: readonly BrowserPlayer[],
   previousVersion: number,
 ): Promise<number> {
+  let convergedVersion = previousVersion;
   await expect.poll(async () => {
     const versions = await Promise.all(players.map(({ page }) => roomVersion(page)));
-    return versions.every((version) => version > previousVersion) && new Set(versions).size === 1;
+    const converged = versions.every((version) => version > previousVersion)
+      && new Set(versions).size === 1;
+    if (converged) convergedVersion = versions[0];
+    return converged;
   }).toBe(true);
-  return roomVersion(players[0].page);
+  return convergedVersion;
+}
+
+export async function waitForVersionConvergence(
+  players: readonly BrowserPlayer[],
+): Promise<number> {
+  let convergedVersion = Number.NaN;
+  await expect.poll(async () => {
+    const versions = await Promise.all(players.map(({ page }) => roomVersion(page)));
+    const converged = new Set(versions).size === 1;
+    if (converged) convergedVersion = versions[0];
+    return converged;
+  }).toBe(true);
+  return convergedVersion;
 }
 
 export async function readyPlayer(
@@ -125,29 +177,144 @@ export async function enabledPieceIds(page: Page): Promise<string[]> {
   return [...new Set(values.filter(Boolean))].sort();
 }
 
-export async function performLegalAction(
-  players: readonly BrowserPlayer[],
-): Promise<number> {
-  const nickname = await currentNickname(players[0].page);
+async function canonicalGameSnapshot(page: Page): Promise<CanonicalGameSnapshot> {
+  return page.evaluate(() => {
+    const dialogs = [...document.querySelectorAll<HTMLElement>("[role='dialog']")];
+    const finished = dialogs.some((dialog) => dialog.innerText.includes("경기 결과"));
+    const currentNickname = document
+      .querySelector<HTMLElement>(".game-player[aria-current='true'] strong")
+      ?.innerText.trim() ?? null;
+    return { currentNickname, finished };
+  });
+}
+
+async function actorGameSnapshot(page: Page): Promise<ActorGameSnapshot> {
+  return page.locator("main[data-room-version]").evaluate((main) => {
+    const dialogs = [...document.querySelectorAll<HTMLElement>("[role='dialog']")];
+    const finished = dialogs.some((dialog) => dialog.innerText.includes("경기 결과"));
+    const buttons = [...document.querySelectorAll<HTMLButtonElement>("button:enabled")];
+    const action = buttons.some((button) => button.innerText.trim() === "윷 던지기")
+      ? "throw"
+      : document.querySelector("button.yut-piece:enabled")
+        ? "piece"
+        : document.querySelector("button.yut-route:enabled")
+          ? "route"
+          : "waiting";
+    return {
+      action,
+      finished,
+      version: Number(main.getAttribute("data-room-version")),
+    };
+  });
+}
+
+async function gameFinished(players: readonly BrowserPlayer[]): Promise<boolean> {
+  const snapshots = await Promise.all(players.map(({ page }) =>
+    canonicalGameSnapshot(page).catch(() => ({ currentNickname: null, finished: false })),
+  ));
+  return snapshots.some(({ finished }) => finished);
+}
+
+async function probeLegalAction(players: readonly BrowserPlayer[]): Promise<LegalActionProbe> {
+  const canonical = await canonicalGameSnapshot(players[0].page);
+  if (canonical.finished) return { kind: "finished" };
+  const nickname = canonical.currentNickname;
+  if (!nickname) throw new Error("The canonical page has no current browser player.");
   const actor = players.find((player) => player.nickname === nickname);
   if (!actor) throw new Error(`Current browser player ${nickname} was not found.`);
-  const before = await roomVersion(actor.page);
-  const throwButton = actor.page.getByRole("button", { name: "윷 던지기" });
-  const pieceButton = actor.page.locator("button.yut-piece:enabled").first();
-  const routeButton = actor.page.locator("button.yut-route:enabled").first();
+  const actorSnapshot = await actorGameSnapshot(actor.page);
 
-  if (await throwButton.count() && await throwButton.isEnabled()) await throwButton.click();
-  else if (await pieceButton.count()) await pieceButton.click();
-  else if (await routeButton.count()) await routeButton.click();
-  else throw new Error(`No legal action was rendered for ${nickname}.`);
+  if (actorSnapshot.finished) return { kind: "finished" };
+  if (actorSnapshot.action === "waiting") return { kind: "waiting" };
+  return {
+    action: actorSnapshot.action,
+    actor,
+    beforeVersion: actorSnapshot.version,
+    kind: "action",
+    nickname,
+  };
+}
 
-  return waitForVersionAfter(players, before);
+function actionLocator(page: Page, action: EnabledLegalAction) {
+  if (action === "throw") return page.getByRole("button", { name: "윷 던지기" });
+  if (action === "piece") return page.locator("button.yut-piece:enabled").first();
+  return page.locator("button.yut-route:enabled").first();
+}
+
+async function legalActionDiagnostics(
+  players: readonly BrowserPlayer[],
+  lastClickError: string,
+  lastPollError: string,
+): Promise<string> {
+  const canonical = await canonicalGameSnapshot(players[0].page)
+    .catch(() => ({ currentNickname: null, finished: false }));
+  const actor = players.find((player) => player.nickname === canonical.currentNickname) ?? players[0];
+  const actorSnapshot = await actorGameSnapshot(actor.page)
+    .catch(() => ({ action: "waiting" as const, finished: false, version: Number.NaN }));
+  return `current=${canonical.currentNickname ?? "unavailable"}, version=${actorSnapshot.version}, `
+    + `canonicalFinished=${canonical.finished}, actorFinished=${actorSnapshot.finished}, `
+    + `action=${actorSnapshot.action}, lastClickError=${lastClickError}, lastPollError=${lastPollError}`;
+}
+
+export async function performLegalAction(
+  players: readonly BrowserPlayer[],
+): Promise<LegalActionResult> {
+  const deadline = Date.now() + LEGAL_ACTION_DEADLINE_MS;
+  let lastClickError = "none";
+  let lastPollError = "none";
+
+  while (Date.now() < deadline) {
+    const remaining = Math.max(1, deadline - Date.now());
+    let readyProbe: ReadyLegalActionProbe | undefined;
+    try {
+      await expect.poll(async () => {
+        const next = await probeLegalAction(players);
+        if (next.kind !== "waiting") readyProbe = next;
+        return next.kind;
+      }, {
+        intervals: [50, 100, 250],
+        message: "waiting for a current-player action or finish dialog",
+        timeout: remaining,
+      }).not.toBe("waiting");
+    } catch (cause) {
+      lastPollError = cause instanceof Error ? cause.message.split("\n", 1)[0] : String(cause);
+      break;
+    }
+
+    const probe = readyProbe;
+    if (!probe) continue;
+    if (probe.kind === "finished") return { kind: "finished" };
+
+    try {
+      await actionLocator(probe.actor.page, probe.action).click({
+        timeout: Math.min(LEGAL_ACTION_CLICK_TIMEOUT_MS, Math.max(1, deadline - Date.now())),
+      });
+    } catch (cause) {
+      if (await gameFinished(players)) return { kind: "finished" };
+      lastClickError = cause instanceof Error ? cause.message.split("\n", 1)[0] : String(cause);
+      continue;
+    }
+
+    return {
+      kind: "advanced",
+      version: await waitForVersionAfter(players, probe.beforeVersion),
+    };
+  }
+
+  if (await gameFinished(players)) return { kind: "finished" };
+  throw new Error(
+    `No legal action or finish dialog became ready before the deadline `
+    + `(${await legalActionDiagnostics(players, lastClickError, lastPollError)}).`,
+  );
 }
 
 export async function advanceCurrentTurn(players: readonly BrowserPlayer[]): Promise<string> {
   const startingNickname = await currentNickname(players[0].page);
   for (let action = 0; action < 50; action += 1) {
-    await performLegalAction(players);
+    const result = await performLegalAction(players);
+    if (result.kind === "finished") {
+      throw new Error(`The game finished unexpectedly while advancing ${startingNickname}'s turn.`);
+    }
     const nextNickname = await currentNickname(players[0].page);
     if (nextNickname !== startingNickname) return nextNickname;
   }
@@ -157,7 +324,8 @@ export async function advanceCurrentTurn(players: readonly BrowserPlayer[]): Pro
 export async function playToWinner(players: readonly BrowserPlayer[]): Promise<void> {
   for (let action = 0; action < 1_000; action += 1) {
     if (await players[0].page.getByRole("dialog", { name: "경기 결과" }).count()) return;
-    await performLegalAction(players);
+    const result = await performLegalAction(players);
+    if (result.kind === "finished") return;
   }
   throw new Error("The seeded game did not finish after 1,000 legal actions.");
 }
