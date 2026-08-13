@@ -4,7 +4,7 @@ import {
   CENTER_NODE_ID,
   SHORTCUT_GATES,
   START_NODE_ID,
-} from "../../client/components/YutBoard";
+} from "../../client/boardLayout";
 
 /**
  * 윷판이 강조하는 칸은 서버 규칙에서 그대로 나와야 한다. 판을 고치고 강조를 잊거나
