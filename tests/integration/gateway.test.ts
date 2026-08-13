@@ -35,7 +35,31 @@ function requestId(sequence: number): string {
   return `00000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`;
 }
 
-function finishDeterministicRoom(service: RoomService) {
+interface DeterministicRandom {
+  random: () => number;
+  useVaryingThrows: (varying: boolean) => void;
+}
+
+/**
+ * 방 코드는 늘 같은 값으로 뽑아 코드 재사용을 검증할 수 있게 하고, 윷 던지기에는 변하는 값을 준다.
+ * 고정값만 쓰면 매번 윷이 나와 보너스 던지기가 끝나지 않아 차례가 넘어가지 않는다.
+ */
+function deterministicRandom(): DeterministicRandom {
+  let varying = false;
+  let state = 1;
+  return {
+    random: () => {
+      if (!varying) return 0.1;
+      state = (state * 1_664_525 + 1_013_904_223) % 4_294_967_296;
+      return state / 4_294_967_296;
+    },
+    useVaryingThrows: (next: boolean) => {
+      varying = next;
+    },
+  };
+}
+
+function finishDeterministicRoom(service: RoomService, rng: DeterministicRandom) {
   const host = service.createRoom({ nickname: "Host", mode: "individual" });
   const guest = service.joinRoom({ roomCode: host.snapshot.roomCode, nickname: "Guest" });
   let sequence = 100;
@@ -57,7 +81,12 @@ function finishDeterministicRoom(service: RoomService) {
     requestId: requestId(sequence++),
   });
 
+  rng.useVaryingThrows(true);
+  let guard = 0;
   while (snapshot.phase === "playing") {
+    if (++guard > 20_000) {
+      throw new Error(`게임이 끝나지 않았습니다. 마지막 단계: ${snapshot.game!.turnStage}`);
+    }
     const playerId = snapshot.game!.currentPlayerId;
     if (snapshot.game!.turnStage === "AWAITING_THROW") {
       snapshot = service.dispatch(playerId, {
@@ -66,9 +95,13 @@ function finishDeterministicRoom(service: RoomService) {
         requestId: requestId(sequence++),
       });
     } else if (snapshot.game!.turnStage === "AWAITING_PIECE") {
+      const usableThrow = snapshot.game!.pendingThrows.find(
+        (pending) => pending.legalPieceIds.length > 0,
+      )!;
       snapshot = service.dispatch(playerId, {
         type: "SELECT_PIECE",
-        pieceId: snapshot.game!.legalPieceIds[0],
+        throwId: usableThrow.id,
+        pieceId: usableThrow.legalPieceIds[0],
         roomVersion: snapshot.version,
         requestId: requestId(sequence++),
       });
@@ -79,9 +112,13 @@ function finishDeterministicRoom(service: RoomService) {
         roomVersion: snapshot.version,
         requestId: requestId(sequence++),
       });
+    } else {
+      throw new Error(`처리할 수 없는 단계입니다: ${snapshot.game!.turnStage}`);
     }
   }
 
+  // 교체 방이 같은 코드를 다시 받도록 고정값으로 되돌린다.
+  rng.useVaryingThrows(false);
   return { host, roomCode: snapshot.roomCode };
 }
 
@@ -227,13 +264,14 @@ describe("Socket.IO gateway", () => {
 
   it("evicts connected sockets when a finished room expires before its code is reused", async () => {
     let now = 0;
+    const rng = deterministicRandom();
     const roomService = new RoomService({
       now: () => now,
-      random: () => 0.1,
+      random: rng.random,
       schedule: () => Symbol("timer"),
       cancel: () => undefined,
     });
-    const finished = finishDeterministicRoom(roomService);
+    const finished = finishDeterministicRoom(roomService, rng);
     const server = buildServer({
       publicOrigin: PUBLIC_ORIGIN,
       roomService,

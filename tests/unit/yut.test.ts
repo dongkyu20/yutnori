@@ -14,16 +14,16 @@ describe("throwYut", () => {
     });
   });
 
-  it("returns yut for four rounded sides", () => {
-    expect(throwYut(rng([0.9, 0.9, 0.9, 0.9]))).toMatchObject({
+  it("returns yut for four flat sides", () => {
+    expect(throwYut(rng([0.1, 0.1, 0.1, 0.1]))).toMatchObject({
       result: "YUT",
       distance: 4,
       bonusThrows: 1,
     });
   });
 
-  it("returns mo for four flat sides", () => {
-    expect(throwYut(rng([0.1, 0.1, 0.1, 0.1]))).toMatchObject({
+  it("returns mo for four rounded sides", () => {
+    expect(throwYut(rng([0.9, 0.9, 0.9, 0.9]))).toMatchObject({
       result: "MO",
       distance: 5,
       bonusThrows: 1,

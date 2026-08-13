@@ -1,6 +1,7 @@
 export type GameMode = "individual" | "team";
 export type TeamId = "A" | "B" | "C" | "D";
 export type RoomPhase = "waiting" | "playing" | "finished";
+export type YutResult = "BACK_DO" | "DO" | "GAE" | "GEOL" | "YUT" | "MO";
 export type ClientCommand =
   | { type: "CREATE_ROOM"; nickname: string; mode: GameMode }
   | { type: "JOIN_ROOM"; nickname: string; roomCode: string }
@@ -8,8 +9,10 @@ export type ClientCommand =
   | { type: "ASSIGN_TEAM"; playerId: string; teamId: TeamId; roomVersion: number; requestId: string }
   | { type: "KICK_PLAYER"; playerId: string; roomVersion: number; requestId: string }
   | { type: "START_GAME"; roomVersion: number; requestId: string }
+  /** 경기가 끝난 방을 같은 참가자와 팀 그대로 대기 상태로 되돌린다. */
+  | { type: "PLAY_AGAIN"; roomVersion: number; requestId: string }
   | { type: "THROW_YUT"; roomVersion: number; requestId: string }
-  | { type: "SELECT_PIECE"; pieceId: string; roomVersion: number; requestId: string }
+  | { type: "SELECT_PIECE"; throwId: string; pieceId: string; roomVersion: number; requestId: string }
   | { type: "SELECT_ROUTE"; routeId: string; roomVersion: number; requestId: string }
   | { type: "REACT"; emoji: "\uD83D\uDC4F" | "\uD83D\uDD25" | "\uD83D\uDE2E" | "\uD83C\uDF89" };
 export type InRoomCommand = Exclude<ClientCommand, { type: "CREATE_ROOM" | "JOIN_ROOM" }>;
@@ -19,9 +22,11 @@ export interface PublicGameState {
   turnStage: "AWAITING_THROW" | "AWAITING_PIECE" | "AWAITING_ROUTE" | "COMPLETE";
   actionExpiresAt: number | null;
   pieces: Array<{ id: string; ownerId: string; teamId?: TeamId; status: "HOME" | "BOARD" | "FINISHED"; nodeId?: string; stackSize: number }>;
+  pendingThrows: Array<{ id: string; result: YutResult; legalPieceIds: string[] }>;
+  throwsRemaining: number;
   legalPieceIds: string[];
   legalRoutes: Array<{ routeId: string; destinationNodeId: string }>;
-  lastThrow: { eventId: string; result: "BACK_DO" | "DO" | "GAE" | "GEOL" | "YUT" | "MO"; sticks: [boolean, boolean, boolean, boolean] } | null;
+  lastThrow: { eventId: string; result: YutResult; sticks: [boolean, boolean, boolean, boolean] } | null;
   winnerId: string | null;
   events: Array<{ id: string; message: string; createdAt: number }>;
 }

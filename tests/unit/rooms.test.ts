@@ -49,6 +49,17 @@ class FakeClock {
   }
 }
 
+/**
+ * 결정적이면서 값이 흩어지는 난수. 고정값 난수는 윷이나 모만 나와 던지기가 끝나지 않는다.
+ */
+const sequenceRandom = (seed = 1): () => number => {
+  let state = seed;
+  return () => {
+    state = (state * 1_664_525 + 1_013_904_223) % 4_294_967_296;
+    return state / 4_294_967_296;
+  };
+};
+
 const requestId = (() => {
   let sequence = 0;
   return () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`;
@@ -97,6 +108,30 @@ function readyIndividualGame(service: RoomService): SessionResult[] {
   snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "START_GAME" });
   sessions[0].snapshot = snapshot;
   return sessions;
+}
+
+/** 승자가 나올 때까지 합법 행동만 골라 진행한다. */
+function playToFinish(service: RoomService, start: PublicRoomSnapshot): PublicRoomSnapshot {
+  let snapshot = start;
+  while (snapshot.phase === "playing") {
+    const game = snapshot.game!;
+    if (game.turnStage === "AWAITING_THROW") {
+      snapshot = dispatch(service, game.currentPlayerId, snapshot, { type: "THROW_YUT" });
+    } else if (game.turnStage === "AWAITING_PIECE") {
+      const usable = game.pendingThrows.find((pending) => pending.legalPieceIds.length > 0)!;
+      snapshot = dispatch(service, game.currentPlayerId, snapshot, {
+        type: "SELECT_PIECE",
+        throwId: usable.id,
+        pieceId: usable.legalPieceIds[0],
+      });
+    } else if (game.turnStage === "AWAITING_ROUTE") {
+      snapshot = dispatch(service, game.currentPlayerId, snapshot, {
+        type: "SELECT_ROUTE",
+        routeId: game.legalRoutes[0].routeId,
+      });
+    }
+  }
+  return snapshot;
 }
 
 describe("RoomService lobby lifecycle", () => {
@@ -348,12 +383,14 @@ describe("RoomService timers and cleanup", () => {
     clock.advance(1);
     const current = service.reconnect(host.reconnectToken).snapshot;
     expect(clock.executed).toBe(1);
-    expect(current.game?.lastThrow?.result).toBe("MO");
+    expect(current.game?.lastThrow?.result).toBe("YUT");
   });
 
   it("automatically performs the pending action at exactly 45,000 ms", () => {
     const clock = new FakeClock();
-    const service = new RoomService(clock.options(() => 0.1));
+    const values = [...Array(6).fill(0.2), 0.9, 0.1, 0.9, 0.9];
+    let index = 0;
+    const service = new RoomService(clock.options(() => values[index++] ?? 0.9));
     const [host] = readyIndividualGame(service);
 
     expect(host.snapshot.game?.actionExpiresAt).toBe(45_000);
@@ -365,7 +402,7 @@ describe("RoomService timers and cleanup", () => {
     const current = service.reconnect(host.reconnectToken).snapshot;
     expect(clock.executed).toBe(1);
     expect(current.game?.turnStage).toBe("AWAITING_PIECE");
-    expect(current.game?.lastThrow?.result).toBe("MO");
+    expect(current.game?.lastThrow?.result).toBe("DO");
   });
 
   it("does not reset the active action deadline when a player reconnects", () => {
@@ -411,6 +448,7 @@ describe("RoomService timers and cleanup", () => {
     current = dispatch(service, host.playerId, current, { type: "THROW_YUT" });
     current = dispatch(service, host.playerId, current, {
       type: "SELECT_PIECE",
+      throwId: current.game!.pendingThrows[0].id,
       pieceId: current.game!.legalPieceIds[0],
     });
 
@@ -427,7 +465,7 @@ describe("RoomService timers and cleanup", () => {
 
     expect(thrown.game?.lastThrow).toEqual({
       eventId: "event-1",
-      result: "MO",
+      result: "YUT",
       sticks: [true, true, true, true],
     });
   });
@@ -450,7 +488,7 @@ describe("RoomService timers and cleanup", () => {
 
   it("deletes a finished room after thirty minutes", () => {
     const clock = new FakeClock();
-    const service = new RoomService(clock.options(() => 0.1));
+    const service = new RoomService(clock.options(sequenceRandom()));
     const [host] = readyIndividualGame(service);
     let snapshot = host.snapshot;
 
@@ -458,9 +496,13 @@ describe("RoomService timers and cleanup", () => {
       if (snapshot.game?.turnStage === "AWAITING_THROW") {
         snapshot = dispatch(service, snapshot.game.currentPlayerId, snapshot, { type: "THROW_YUT" });
       } else if (snapshot.game?.turnStage === "AWAITING_PIECE") {
+        const usableThrow = snapshot.game.pendingThrows.find(
+          (pending) => pending.legalPieceIds.length > 0,
+        )!;
         snapshot = dispatch(service, snapshot.game.currentPlayerId, snapshot, {
           type: "SELECT_PIECE",
-          pieceId: snapshot.game.legalPieceIds[0],
+          throwId: usableThrow.id,
+          pieceId: usableThrow.legalPieceIds[0],
         });
       } else if (snapshot.game?.turnStage === "AWAITING_ROUTE") {
         snapshot = dispatch(service, snapshot.game.currentPlayerId, snapshot, {
@@ -477,6 +519,146 @@ describe("RoomService timers and cleanup", () => {
     clock.advance(1);
     service.removeExpiredRooms();
     expect(roomError(() => service.reconnect(host.reconnectToken)).code).toBe("SESSION_NOT_FOUND");
+  });
+});
+
+describe("RoomService 다시 하기", () => {
+  it("returns a finished room to waiting with the same players, ready only for who asked", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options(sequenceRandom()));
+    const [host, guest] = readyIndividualGame(service);
+    const finished = playToFinish(service, host.snapshot);
+    expect(finished.phase).toBe("finished");
+    expect(finished.game?.winnerId).not.toBeNull();
+
+    // 방장이 아닌 참가자도 다시 하기를 부를 수 있다.
+    const restarted = dispatch(service, guest.playerId, finished, { type: "PLAY_AGAIN" });
+
+    expect(restarted.phase).toBe("waiting");
+    expect(restarted.game).toBeNull();
+    expect(restarted.players.map((player) => player.id)).toEqual(
+      finished.players.map((player) => player.id),
+    );
+    expect(restarted.players.map((player) => player.nickname)).toEqual(["Host", "Guest"]);
+    expect(restarted.players.find((player) => player.id === guest.playerId)?.ready).toBe(true);
+    expect(restarted.players.find((player) => player.id === host.playerId)?.ready).toBe(false);
+    // 나머지가 아직 준비하지 않았으니 바로 시작할 수는 없다.
+    expect(restarted.canStart).toBe(false);
+    expect(restarted.hostPlayerId).toBe(host.playerId);
+    expect(restarted.roomCode).toBe(finished.roomCode);
+  });
+
+  it("plays a fresh game with the same room once everyone is ready again", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options(sequenceRandom()));
+    const [host, guest] = readyIndividualGame(service);
+    const finished = playToFinish(service, host.snapshot);
+
+    let snapshot = dispatch(service, guest.playerId, finished, { type: "PLAY_AGAIN" });
+    snapshot = dispatch(service, host.playerId, snapshot, { type: "SET_READY", ready: true });
+    expect(snapshot.canStart).toBe(true);
+    snapshot = dispatch(service, host.playerId, snapshot, { type: "START_GAME" });
+
+    expect(snapshot.phase).toBe("playing");
+    expect(snapshot.game?.winnerId).toBeNull();
+    expect(snapshot.game?.turnStage).toBe("AWAITING_THROW");
+    // 모든 말이 다시 출발선에 선다.
+    expect(snapshot.game?.pieces).toHaveLength(8);
+    expect(snapshot.game?.pieces.every((piece) => piece.status === "HOME")).toBe(true);
+    expect(snapshot.game?.events).toEqual([]);
+  });
+
+  it("keeps team assignments so the same teams line up again", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options(sequenceRandom()));
+    const nicknames = ["Host", "Bee", "Cat", "Deer", "Eel", "Fox", "Goat", "Hen"];
+    const sessions = createPlayers(service, "team", nicknames);
+    const teams: TeamId[] = ["A", "A", "B", "B", "C", "C", "D", "D"];
+    let snapshot = sessions.at(-1)!.snapshot;
+    sessions.forEach((session, index) => {
+      snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+        type: "ASSIGN_TEAM",
+        playerId: session.playerId,
+        teamId: teams[index],
+      });
+    });
+    for (const session of sessions) {
+      snapshot = dispatch(service, session.playerId, snapshot, { type: "SET_READY", ready: true });
+    }
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "START_GAME" });
+    const finished = playToFinish(service, snapshot);
+    expect(finished.phase).toBe("finished");
+
+    const restarted = dispatch(service, sessions[0].playerId, finished, { type: "PLAY_AGAIN" });
+
+    expect(restarted.players.map((player) => player.teamId)).toEqual(teams);
+    expect(restarted.mode).toBe("team");
+  });
+
+  it("refuses a rematch while the game is still being played", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options(sequenceRandom()));
+    const [host] = readyIndividualGame(service);
+
+    expect(roomError(() =>
+      dispatch(service, host.playerId, host.snapshot, { type: "PLAY_AGAIN" }),
+    ).code).toBe("ROOM_NOT_FINISHED");
+  });
+
+  it("refuses a second rematch once the room is already waiting", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options(sequenceRandom()));
+    const [host, guest] = readyIndividualGame(service);
+    const finished = playToFinish(service, host.snapshot);
+    const restarted = dispatch(service, guest.playerId, finished, { type: "PLAY_AGAIN" });
+
+    expect(roomError(() =>
+      dispatch(service, host.playerId, restarted, { type: "PLAY_AGAIN" }),
+    ).code).toBe("ROOM_NOT_FINISHED");
+  });
+
+  it("hands the room to whoever asks when the host left before the rematch", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options(sequenceRandom()));
+    const [host, guest] = readyIndividualGame(service);
+    expect(playToFinish(service, host.snapshot).phase).toBe("finished");
+    service.disconnect(host.playerId);
+    const beforeRestart = service.reconnect(guest.reconnectToken).snapshot;
+    // 경기가 끝난 방에서는 방장이 나가도 자리가 옮겨지지 않는다.
+    expect(beforeRestart.hostPlayerId).toBe(host.playerId);
+
+    const restarted = dispatch(service, guest.playerId, beforeRestart, { type: "PLAY_AGAIN" });
+
+    expect(restarted.hostPlayerId).toBe(guest.playerId);
+  });
+
+  it("opens the room code again so someone who left can rejoin the rematch", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options(sequenceRandom()));
+    const [host, guest] = readyIndividualGame(service);
+    const finished = playToFinish(service, host.snapshot);
+    expect(roomError(() =>
+      service.joinRoom({ roomCode: finished.roomCode, nickname: "Late" }),
+    ).code).toBe("GAME_ALREADY_STARTED");
+
+    const restarted = dispatch(service, guest.playerId, finished, { type: "PLAY_AGAIN" });
+    const late = service.joinRoom({ roomCode: restarted.roomCode, nickname: "Late" });
+
+    expect(late.snapshot.players.map((player) => player.nickname)).toEqual(["Host", "Guest", "Late"]);
+  });
+
+  it("stops the finished-room countdown once the rematch begins", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options(sequenceRandom()));
+    const [host, guest] = readyIndividualGame(service);
+    const finished = playToFinish(service, host.snapshot);
+    dispatch(service, guest.playerId, finished, { type: "PLAY_AGAIN" });
+
+    // 끝난 방은 30분 뒤 사라지지만, 다시 하기로 되돌린 방은 남는다.
+    clock.advance(1_800_001);
+    service.removeExpiredRooms();
+
+    expect(service.reconnect(host.reconnectToken).snapshot.phase).toBe("waiting");
   });
 });
 
@@ -524,7 +706,7 @@ describe("RoomService change subscriptions", () => {
 
     expect(delivered).toHaveLength(1);
     expect(delivered[0].roomCode).toBe(host.snapshot.roomCode);
-    expect(delivered[0].snapshot.game?.lastThrow?.result).toBe("MO");
+    expect(delivered[0].snapshot.game?.lastThrow?.result).toBe("YUT");
     expect(reported).toEqual([failure]);
   });
 
@@ -575,7 +757,7 @@ describe("RoomService change subscriptions", () => {
     expect(changes).toHaveLength(1);
     expect(changes[0].roomCode).toBe(host.snapshot.roomCode);
     expect(changes[0].snapshot.version).toBe(host.snapshot.version + 1);
-    expect(changes[0].snapshot.game?.lastThrow?.result).toBe("MO");
+    expect(changes[0].snapshot.game?.lastThrow?.result).toBe("YUT");
 
     unsubscribe();
     clock.advance(45_000);

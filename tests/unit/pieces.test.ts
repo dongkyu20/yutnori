@@ -197,7 +197,7 @@ describe("piece rules", () => {
     expect(getLegalPieceIds(pieces, { ownerId: "A1" }, -1)).toEqual([]);
   });
 
-  it("exposes both forward routes for a piece on a junction", () => {
+  it("takes the shortcut for a piece stopped on a junction", () => {
     const junctionPiece = piece({
       id: "A-1",
       ownerId: "A1",
@@ -207,7 +207,6 @@ describe("piece rules", () => {
     });
 
     expect(getLegalMoveOptions(junctionPiece, 2)).toEqual([
-      { routeId: "OUTER", nodeId: "O7", finished: false, traversed: ["O6", "O7"] },
       { routeId: "CENTER_A", nodeId: "D1_2", finished: false, traversed: ["D1_1", "D1_2"] },
     ]);
   });

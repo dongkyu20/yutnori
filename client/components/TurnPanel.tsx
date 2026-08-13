@@ -2,11 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PublicGameState } from "../../shared/protocol";
+import { YutSticks } from "./YutSticks";
 
 interface TurnPanelProps {
   game: PublicGameState;
   currentPlayerNickname: string;
   isCurrentPlayer: boolean;
+  activeThrowId: string | null;
+  onSelectThrow: (throwId: string) => void;
   onThrow: () => void;
 }
 
@@ -21,7 +24,24 @@ const STAGE_GUIDANCE: Record<PublicGameState["turnStage"], string> = {
   COMPLETE: "게임이 끝났습니다",
 };
 
-export function TurnPanel({ game, currentPlayerNickname, isCurrentPlayer, onThrow }: TurnPanelProps) {
+function guidanceFor(game: PublicGameState): string {
+  if (game.turnStage === "AWAITING_THROW" && game.pendingThrows.length > 0) {
+    return "윷이나 모가 나왔습니다. 한 번 더 던지세요";
+  }
+  if (game.turnStage === "AWAITING_PIECE" && game.pendingThrows.length > 1) {
+    return "쓸 윷 결과와 움직일 말을 고르세요";
+  }
+  return STAGE_GUIDANCE[game.turnStage];
+}
+
+export function TurnPanel({
+  game,
+  currentPlayerNickname,
+  isCurrentPlayer,
+  activeThrowId,
+  onSelectThrow,
+  onThrow,
+}: TurnPanelProps) {
   const currentThrowEventId = game.lastThrow?.eventId ?? null;
   const previousThrowEventId = useRef(currentThrowEventId);
   const [animating, setAnimating] = useState(false);
@@ -40,18 +60,41 @@ export function TurnPanel({ game, currentPlayerNickname, isCurrentPlayer, onThro
     <aside className="turn-panel" aria-labelledby="turn-panel-heading">
       <h2 id="turn-panel-heading">차례 안내</h2>
       <p role="status" aria-live="polite">현재 차례: <strong>{currentPlayerNickname}</strong></p>
-      <p className="turn-panel__guidance">{STAGE_GUIDANCE[game.turnStage]}</p>
+      <p className="turn-panel__guidance">{guidanceFor(game)}</p>
       <section className="yut-result" aria-labelledby="yut-result-heading">
         <h3 id="yut-result-heading">윷 결과</h3>
         <p>{game.lastThrow ? `던진 결과: ${RESULT_NAMES[game.lastThrow.result]}` : "아직 던진 결과가 없습니다"}</p>
-        <ol key={currentThrowEventId ?? "no-throw"} className="yut-sticks" data-testid="yut-sticks" data-animating={animating ? "true" : undefined} aria-label="윷가락 네 개">
-          {(game.lastThrow?.sticks ?? [false, false, false, false]).map((flat, index) => (
-            <li key={index} className={`yut-stick${flat ? " yut-stick--flat" : ""}`} aria-label={`${index + 1}번 윷가락: ${flat ? "평평한 면" : "둥근 면"}`}>
-              <span aria-hidden="true">{flat ? "배" : "등"}</span>
-            </li>
-          ))}
-        </ol>
+        <YutSticks
+          sticks={game.lastThrow?.sticks ?? [false, false, false, false]}
+          animating={animating}
+          throwKey={currentThrowEventId ?? "no-throw"}
+        />
       </section>
+      {game.pendingThrows.length > 0 && (
+        <section className="pending-throws" aria-labelledby="pending-throws-heading">
+          <h3 id="pending-throws-heading">쓸 수 있는 결과</h3>
+          <ul className="pending-throws__list">
+            {game.pendingThrows.map((pending) => (
+              <li key={pending.id}>
+                <button
+                  type="button"
+                  className="pending-throw"
+                  aria-label={`${RESULT_NAMES[pending.result]} 쓰기`}
+                  aria-pressed={pending.id === activeThrowId}
+                  disabled={
+                    !isCurrentPlayer
+                    || game.turnStage !== "AWAITING_PIECE"
+                    || pending.legalPieceIds.length === 0
+                  }
+                  onClick={() => onSelectThrow(pending.id)}
+                >
+                  {RESULT_NAMES[pending.result]}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {game.turnStage === "AWAITING_THROW" && (
         <button type="button" className="turn-panel__throw" disabled={!isCurrentPlayer} onClick={onThrow}>윷 던지기</button>
       )}

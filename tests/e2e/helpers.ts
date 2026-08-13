@@ -177,6 +177,14 @@ export async function enabledPieceIds(page: Page): Promise<string[]> {
   return [...new Set(values.filter(Boolean))].sort();
 }
 
+/**
+ * 던지기 버튼은 던질 차례일 때만 그려지므로, 아직 던질 기회가 남았는지 알려 준다.
+ * 윷이나 모가 나오면 보너스 던지기가 쌓여 말을 고르기 전에 여러 번 던지게 된다.
+ */
+export async function throwPending(page: Page): Promise<boolean> {
+  return (await page.getByRole("button", { name: "윷 던지기" }).count()) > 0;
+}
+
 async function canonicalGameSnapshot(page: Page): Promise<CanonicalGameSnapshot> {
   return page.evaluate(() => {
     const dialogs = [...document.querySelectorAll<HTMLElement>("[role='dialog']")];

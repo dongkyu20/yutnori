@@ -13,6 +13,8 @@ function createGame(overrides: Partial<PublicGameState> = {}): PublicGameState {
     turnStage: "AWAITING_THROW",
     actionExpiresAt: null,
     pieces: [],
+    pendingThrows: [],
+    throwsRemaining: 0,
     legalPieceIds: [],
     legalRoutes: [],
     lastThrow: null,
@@ -36,7 +38,7 @@ describe("TurnPanel", () => {
 
   it("announces the current turn, shows stage-specific Korean guidance, and disables another player's action", () => {
     const { rerender } = render(
-      <TurnPanel game={createGame()} currentPlayerNickname="민수" isCurrentPlayer={false} onThrow={() => undefined} />,
+      <TurnPanel game={createGame()} currentPlayerNickname="민수" isCurrentPlayer={false} activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined} />,
     );
 
     expect(screen.getByRole("status")).toHaveTextContent("현재 차례: 민수");
@@ -48,7 +50,7 @@ describe("TurnPanel", () => {
         game={createGame({ turnStage: "AWAITING_PIECE" })}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        onThrow={() => undefined}
+        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
       />,
     );
     expect(screen.getByText("움직일 말을 고르세요")).toBeInTheDocument();
@@ -59,7 +61,7 @@ describe("TurnPanel", () => {
         game={createGame({ turnStage: "AWAITING_ROUTE" })}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        onThrow={() => undefined}
+        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
       />,
     );
     expect(screen.getByText("갈 길을 고르세요")).toBeInTheDocument();
@@ -80,7 +82,7 @@ describe("TurnPanel", () => {
         })}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        onThrow={() => undefined}
+        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
       />,
     );
 
@@ -92,7 +94,14 @@ describe("TurnPanel", () => {
     const user = userEvent.setup();
     const onThrow = vi.fn();
     render(
-      <TurnPanel game={createGame()} currentPlayerNickname="민수" isCurrentPlayer onThrow={onThrow} />,
+      <TurnPanel
+        game={createGame()}
+        currentPlayerNickname="민수"
+        isCurrentPlayer
+        activeThrowId={null}
+        onSelectThrow={() => undefined}
+        onThrow={onThrow}
+      />,
     );
     const throwButton = screen.getByRole("button", { name: "윷 던지기" });
 
@@ -108,7 +117,7 @@ describe("TurnPanel", () => {
       lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
     });
     const { rerender } = render(
-      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
+      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined} />,
     );
 
     expect(screen.getByTestId("yut-sticks")).not.toHaveAttribute("data-animating", "true");
@@ -117,7 +126,7 @@ describe("TurnPanel", () => {
         game={{ ...initial, events: [{ id: "event-2", message: "말 이동", createdAt: 2 }] }}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        onThrow={() => undefined}
+        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
       />,
     );
     expect(screen.getByTestId("yut-sticks")).not.toHaveAttribute("data-animating", "true");
@@ -130,7 +139,7 @@ describe("TurnPanel", () => {
         }}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        onThrow={() => undefined}
+        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
       />,
     );
     expect(screen.getByTestId("yut-sticks")).toHaveAttribute("data-animating", "true");
@@ -143,7 +152,7 @@ describe("TurnPanel", () => {
       lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
     });
     const { rerender } = render(
-      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
+      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined} />,
     );
 
     rerender(
@@ -154,7 +163,7 @@ describe("TurnPanel", () => {
         }}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        onThrow={() => undefined}
+        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
       />,
     );
     const firstAnimatedSticks = screen.getByTestId("yut-sticks");
@@ -169,7 +178,7 @@ describe("TurnPanel", () => {
         }}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        onThrow={() => undefined}
+        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
       />,
     );
     const secondAnimatedSticks = screen.getByTestId("yut-sticks");
@@ -178,6 +187,54 @@ describe("TurnPanel", () => {
 
     act(() => vi.advanceTimersByTime(650));
     expect(screen.getByTestId("yut-sticks")).not.toHaveAttribute("data-animating", "true");
+  });
+
+  it("offers every held result, marks the active one, and disables unusable ones", async () => {
+    const user = userEvent.setup();
+    const onSelectThrow = vi.fn();
+    render(
+      <TurnPanel
+        game={createGame({
+          turnStage: "AWAITING_PIECE",
+          pendingThrows: [
+            { id: "event-1", result: "YUT", legalPieceIds: ["A-1"] },
+            { id: "event-3", result: "BACK_DO", legalPieceIds: [] },
+          ],
+        })}
+        currentPlayerNickname="민수"
+        isCurrentPlayer
+        activeThrowId="event-1"
+        onSelectThrow={onSelectThrow}
+        onThrow={() => undefined}
+      />,
+    );
+
+    const yut = screen.getByRole("button", { name: "윷 쓰기" });
+    expect(yut).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "빽도 쓰기" })).toBeDisabled();
+
+    await user.click(yut);
+    expect(onSelectThrow).toHaveBeenCalledWith("event-1");
+  });
+
+  it("asks for another throw while yut or mo keeps the turn open", () => {
+    render(
+      <TurnPanel
+        game={createGame({
+          throwsRemaining: 1,
+          pendingThrows: [{ id: "event-1", result: "MO", legalPieceIds: [] }],
+        })}
+        currentPlayerNickname="민수"
+        isCurrentPlayer
+        activeThrowId={null}
+        onSelectThrow={() => undefined}
+        onThrow={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText("윷이나 모가 나왔습니다. 한 번 더 던지세요")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "모 쓰기" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "윷 던지기" })).toBeEnabled();
   });
 
   it("sends throw intent with the current room version and a UUID", async () => {

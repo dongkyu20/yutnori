@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { InRoomCommand, PublicRoomSnapshot } from "../../shared/protocol";
 import type { ConnectionState } from "../useGameSession";
+import { sideClass, sideName, sideSlotOf, sideSlots } from "../sideColor";
 import { EmojiReactions, type ReactionEvent } from "./EmojiReactions";
 import { EventLog } from "./EventLog";
 import { ResultDialog } from "./ResultDialog";
@@ -36,10 +37,18 @@ export function GameScreen({
 }: GameScreenProps) {
   const [playersOpen, setPlayersOpen] = useState(true);
   const [logOpen, setLogOpen] = useState(true);
+  const [preferredThrowId, setPreferredThrowId] = useState<string | null>(null);
   const game = snapshot.game;
   if (!game) return <main><p role="alert">게임 정보를 불러오지 못했습니다.</p></main>;
 
+  // 서버가 준 결과 중 실제로 쓸 수 있는 것만 고를 수 있고, 고른 결과가 사라지면 첫 결과로 되돌아간다.
+  const usableThrows = game.pendingThrows.filter((pending) => pending.legalPieceIds.length > 0);
+  const activeThrow = usableThrows.find((pending) => pending.id === preferredThrowId)
+    ?? usableThrows[0]
+    ?? null;
   const currentPlayer = snapshot.players.find((player) => player.id === game.currentPlayerId);
+  // 윷판의 말 색과 참가자 목록의 색을 같은 계산으로 맞춘다.
+  const sides = sideSlots(game.pieces);
   const metadata = () => ({ roomVersion: snapshot.version, requestId: crypto.randomUUID() });
   const winnerName = game.winnerId === null
     ? null
@@ -84,20 +93,25 @@ export function GameScreen({
           >
             <h2>참가자</h2>
             <ul className="game-player-list">
-              {snapshot.players.map((player) => (
-                <li
-                  key={player.id}
-                  className={`game-player game-player--${(player.teamId ?? "individual").toLowerCase()}`}
-                  aria-current={player.id === game.currentPlayerId ? "true" : undefined}
-                  data-player-id={player.id}
-                  data-team-id={player.teamId}
-                >
-                  <strong>{player.nickname}</strong>
-                  {player.teamId && <span>{player.teamId}팀</span>}
-                  <span>{player.connected ? "연결됨" : "연결 끊김"}</span>
-                  {player.id === game.currentPlayerId && <span>차례</span>}
-                </li>
-              ))}
+              {snapshot.players.map((player) => {
+                const slot = sideSlotOf(sides, { teamId: player.teamId, ownerId: player.id });
+                return (
+                  <li
+                    key={player.id}
+                    className={sideClass("game-player", slot)}
+                    aria-current={player.id === game.currentPlayerId ? "true" : undefined}
+                    data-player-id={player.id}
+                    data-team-id={player.teamId}
+                    data-side-slot={slot}
+                  >
+                    <strong>{player.nickname}</strong>
+                    {player.teamId && <span>{player.teamId}팀</span>}
+                    {sideName(slot) && <span>{sideName(slot)} 말</span>}
+                    <span>{player.connected ? "연결됨" : "연결 끊김"}</span>
+                    {player.id === game.currentPlayerId && <span>차례</span>}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         </aside>
@@ -107,13 +121,20 @@ export function GameScreen({
             game={game}
             players={snapshot.players}
             playerId={playerId}
-            onSelectPiece={(pieceId) => sendCommand({ type: "SELECT_PIECE", pieceId, ...metadata() })}
+            legalPieceIds={activeThrow?.legalPieceIds ?? []}
+            onSelectPiece={(pieceId) => {
+              if (activeThrow) {
+                sendCommand({ type: "SELECT_PIECE", throwId: activeThrow.id, pieceId, ...metadata() });
+              }
+            }}
             onSelectRoute={(routeId) => sendCommand({ type: "SELECT_ROUTE", routeId, ...metadata() })}
           />
           <TurnPanel
             game={game}
             currentPlayerNickname={currentPlayer?.nickname ?? game.currentPlayerId}
             isCurrentPlayer={playerId === game.currentPlayerId}
+            activeThrowId={activeThrow?.id ?? null}
+            onSelectThrow={setPreferredThrowId}
             onThrow={() => sendCommand({ type: "THROW_YUT", ...metadata() })}
           />
           <EmojiReactions
@@ -142,7 +163,13 @@ export function GameScreen({
         </aside>
       </div>
 
-      {winnerName && <ResultDialog winnerName={winnerName} onReturnToLobby={leaveRoom} />}
+      {winnerName && (
+        <ResultDialog
+          winnerName={winnerName}
+          onPlayAgain={() => sendCommand({ type: "PLAY_AGAIN", ...metadata() })}
+          onReturnToLobby={leaveRoom}
+        />
+      )}
     </main>
   );
 }

@@ -26,6 +26,7 @@ const ROOM_ERROR_MESSAGES = {
   GAME_ALREADY_STARTED: "이미 시작된 게임입니다.",
   GAME_NOT_PLAYING: "진행 중인 게임이 아닙니다.",
   ROOM_NOT_WAITING: "대기 중인 방에서만 수행할 수 있습니다.",
+  ROOM_NOT_FINISHED: "경기가 끝난 방에서만 다시 시작할 수 있습니다.",
 } as const;
 
 type VersionedCommand = Exclude<InRoomCommand, { type: "REACT" }>;
@@ -324,6 +325,10 @@ export class RoomService {
         this.assertHost(room, actor.id);
         this.startGame(room);
         return;
+      case "PLAY_AGAIN":
+        this.assertFinished(room);
+        this.restartRoom(room, actor);
+        return;
       case "THROW_YUT":
         this.applyPlayerGameCommand(room, {
           type: "THROW",
@@ -335,6 +340,7 @@ export class RoomService {
         this.applyPlayerGameCommand(room, {
           type: "SELECT_PIECE",
           actorId: actor.id,
+          throwId: command.throwId,
           pieceId: command.pieceId,
         });
         return;
@@ -419,6 +425,25 @@ export class RoomService {
     this.scheduleAction(room, this.options.actionTimeoutMs);
   }
 
+  /**
+   * 같은 사람들과 한 판 더. 참가자와 팀은 그대로 두고 방을 대기 상태로 되돌리며,
+   * 요청한 사람만 준비로 표시해 나머지가 각자 뜻을 밝히게 한다.
+   * 대기 상태가 되면 방 코드로 다시 들어올 수도 있어 도중에 나간 사람도 합류할 수 있다.
+   */
+  private restartRoom(room: Room, actor: RoomPlayer): void {
+    room.phase = "waiting";
+    room.game = null;
+    room.finishedAt = null;
+    room.actionExpiresAt = null;
+    for (const player of room.players) {
+      player.ready = player.id === actor.id;
+    }
+    // 경기 중에 방장이 나갔다면 다시 하기를 부른 사람이 방장을 잇는다. 그러지 않으면 시작할 사람이 없다.
+    if (!this.connectedPlayer(room, room.hostPlayerId)) {
+      room.hostPlayerId = actor.id;
+    }
+  }
+
   private finishRoom(room: Room): void {
     room.phase = "finished";
     room.finishedAt = this.options.now();
@@ -462,6 +487,12 @@ export class RoomService {
   private assertWaiting(room: Room): void {
     if (room.phase !== "waiting") {
       throw new RoomError("ROOM_NOT_WAITING", ROOM_ERROR_MESSAGES.ROOM_NOT_WAITING);
+    }
+  }
+
+  private assertFinished(room: Room): void {
+    if (room.phase !== "finished") {
+      throw new RoomError("ROOM_NOT_FINISHED", ROOM_ERROR_MESSAGES.ROOM_NOT_FINISHED);
     }
   }
 

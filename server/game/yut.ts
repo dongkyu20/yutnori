@@ -8,12 +8,13 @@ export function throwYut(random: () => number = Math.random): ThrowOutcome {
     return { sticks, result: "BACK_DO", distance: -1, bonusThrows: 0 };
   }
 
+  // 배(평평한 면)가 위로 나온 개수가 그대로 칸 수가 되고, 하나도 없으면 모다.
   const table = [
-    ["YUT", 4, 1],
+    ["MO", 5, 1],
     ["DO", 1, 0],
     ["GAE", 2, 0],
     ["GEOL", 3, 0],
-    ["MO", 5, 1],
+    ["YUT", 4, 1],
   ] as const;
   const [result, distance, bonusThrows] = table[flatCount];
 

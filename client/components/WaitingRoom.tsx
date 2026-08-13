@@ -58,22 +58,22 @@ export function WaitingRoom({ snapshot, playerId, sendCommand }: WaitingRoomProp
   );
 
   return (
-    <main data-room-version={snapshot.version} data-room-phase={snapshot.phase}>
-      <header>
+    <main className="waiting-room" data-room-version={snapshot.version} data-room-phase={snapshot.phase}>
+      <header className="waiting-room__hero">
         <h1>대기실</h1>
         <p>참가 인원 {`${snapshot.players.length}/${capacity}`}</p>
         <p>방 코드: <strong>{snapshot.roomCode}</strong></p>
-        <button type="button" onClick={() => void copyRoomCode()}>방 코드 복사</button>
-        {copied && <p role="status">방 코드가 복사되었습니다.</p>}
-        {copyError && <p role="alert">방 코드를 직접 복사해주세요.</p>}
+        <button className="waiting-room__action" type="button" onClick={() => void copyRoomCode()}>방 코드 복사</button>
+        {copied && <p className="waiting-room__status" role="status">방 코드가 복사되었습니다.</p>}
+        {copyError && <p className="waiting-room__status waiting-room__status--error" role="alert">방 코드를 직접 복사해주세요.</p>}
       </header>
 
       {snapshot.mode === "individual" ? renderPlayers(snapshot.players) : (
-        <section aria-label="팀 구성">
+        <section className="waiting-room__teams" aria-label="팀 구성">
           {TEAM_IDS.map((teamId) => {
             const members = snapshot.players.filter((player) => player.teamId === teamId);
             return (
-              <section key={teamId} aria-label={`팀 ${teamId}`}>
+              <section key={teamId} className="waiting-room__team-card" aria-label={`팀 ${teamId}`}>
                 <h2>팀 {teamId}</h2>
                 <p>{members.length}/2</p>
                 {renderPlayers(members)}
@@ -81,7 +81,7 @@ export function WaitingRoom({ snapshot, playerId, sendCommand }: WaitingRoomProp
             );
           })}
           {snapshot.players.some((player) => !player.teamId) && (
-            <section aria-label="미배정 참가자">
+            <section className="waiting-room__team-card" aria-label="미배정 참가자">
               <h2>미배정</h2>
               {renderPlayers(snapshot.players.filter((player) => !player.teamId))}
             </section>
@@ -89,11 +89,12 @@ export function WaitingRoom({ snapshot, playerId, sendCommand }: WaitingRoomProp
         </section>
       )}
 
-      <section aria-labelledby="start-heading">
+      <section className="waiting-room__footer" aria-labelledby="start-heading">
         <h2 id="start-heading">게임 준비</h2>
         {!snapshot.canStart && <p role="status">{snapshot.startEligibilityReason}</p>}
         {isHost ? (
           <button
+            className="waiting-room__action"
             type="button"
             disabled={!snapshot.canStart}
             onClick={() => sendCommand({ type: "START_GAME", ...metadata() })}

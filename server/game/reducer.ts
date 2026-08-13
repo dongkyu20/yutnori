@@ -6,6 +6,7 @@ import type {
   GamePlayer,
   GameState,
   MoveOption,
+  PendingThrow,
   Piece,
   PieceController,
   ThrowOutcome,
@@ -14,6 +15,8 @@ import type {
 export type { GameCommand, GameState } from "./types";
 
 const TEAM_IDS: readonly TeamId[] = ["A", "B", "C", "D"];
+/** 차례가 시작되면 누구나 한 번은 던진다. */
+const THROWS_PER_TURN = 1;
 
 export interface CreateGameInput {
   mode: GameMode;
@@ -78,11 +81,13 @@ export function createGame(input: CreateGameInput): GameState {
     pieces: input.mode === "team" ? createTeamPieces(players) : createIndividualPieces(players),
     lastThrow: null,
     lastThrowEventId: null,
+    pendingThrows: [],
+    selectedThrowId: null,
     selectedPieceId: null,
     legalPieceIds: [],
     legalRoutes: [],
     pendingMoveOptions: [],
-    bonusThrowsRemaining: 0,
+    throwsRemaining: THROWS_PER_TURN,
     winnerId: null,
     events: [],
   };
@@ -108,6 +113,7 @@ function withEvent(state: GameState, message: string): GameState {
 function clearedTurnSelection(state: GameState): GameState {
   return {
     ...state,
+    selectedThrowId: null,
     selectedPieceId: null,
     legalPieceIds: [],
     legalRoutes: [],
@@ -125,15 +131,9 @@ export function endTurn(state: GameState): GameState {
     ...clearedTurnSelection(state),
     currentPlayerId: state.turnOrder[(currentIndex + 1) % state.turnOrder.length],
     turnStage: "AWAITING_THROW",
-    bonusThrowsRemaining: 0,
+    pendingThrows: [],
+    throwsRemaining: THROWS_PER_TURN,
   };
-}
-
-function awaitBonusOrEndTurn(state: GameState): GameState {
-  if (state.bonusThrowsRemaining > 0) {
-    return { ...clearedTurnSelection(state), turnStage: "AWAITING_THROW" };
-  }
-  return endTurn(state);
 }
 
 const RESULT_NAMES: Record<ThrowOutcome["result"], string> = {
@@ -144,6 +144,64 @@ const RESULT_NAMES: Record<ThrowOutcome["result"], string> = {
   YUT: "윷",
   MO: "모",
 };
+
+function finalConsonant(word: string): number {
+  const offset = word.charCodeAt(word.length - 1) - 0xac00;
+  return offset >= 0 && offset <= 11171 ? offset % 28 : 0;
+}
+
+function objectParticle(word: string): string {
+  return finalConsonant(word) === 0 ? "를" : "을";
+}
+
+function instrumentParticle(word: string): string {
+  const consonant = finalConsonant(word);
+  return consonant === 0 || consonant === 8 ? "로" : "으로";
+}
+
+/**
+ * 아직 쓰지 않은 윷 결과와 각 결과로 움직일 수 있는 말. 말 선택 단계에서만 채워진다.
+ */
+export function pendingThrowChoices(
+  state: GameState,
+): Array<{ id: string; result: ThrowOutcome["result"]; legalPieceIds: string[] }> {
+  const controller = state.turnStage === "AWAITING_PIECE" ? currentController(state) : null;
+  return state.pendingThrows.map((pending) => ({
+    id: pending.id,
+    result: pending.result,
+    legalPieceIds: controller
+      ? getLegalPieceIds(state.pieces, controller, pending.distance)
+      : [],
+  }));
+}
+
+function beginMovePhase(state: GameState): GameState {
+  const controller = currentController(state);
+  const legalPieceIds = [
+    ...new Set(
+      state.pendingThrows.flatMap((pending) =>
+        getLegalPieceIds(state.pieces, controller, pending.distance),
+      ),
+    ),
+  ];
+
+  if (legalPieceIds.length === 0) {
+    return endTurn(withEvent(state, `${state.currentPlayerId}님은 이동할 수 있는 말이 없습니다.`));
+  }
+
+  return { ...clearedTurnSelection(state), turnStage: "AWAITING_PIECE", legalPieceIds };
+}
+
+/** 던질 기회가 남았으면 계속 던지고, 남은 결과가 있으면 배분하고, 둘 다 없으면 차례를 넘긴다. */
+function continueTurn(state: GameState): GameState {
+  if (state.throwsRemaining > 0) {
+    return { ...clearedTurnSelection(state), turnStage: "AWAITING_THROW" };
+  }
+  if (state.pendingThrows.length === 0) {
+    return endTurn(state);
+  }
+  return beginMovePhase(state);
+}
 
 function assertCommandActor(state: GameState, command: GameCommand): void {
   if (command.actorId !== state.currentPlayerId) {
@@ -160,59 +218,88 @@ function requireStage(state: GameState, expected: GameState["turnStage"]): void 
   }
 }
 
-function resolveMove(state: GameState, pieceId: string, option: MoveOption): GameState {
+function resolveMove(
+  state: GameState,
+  pending: PendingThrow,
+  pieceId: string,
+  option: MoveOption,
+): GameState {
   const resolution = movePieces(state.pieces, { pieceId, option });
+  const resultName = RESULT_NAMES[pending.result];
+  const captured = resolution.capturedPieceIds.length > 0;
   const afterMove = withEvent(
     {
       ...state,
       pieces: resolution.pieces,
-      bonusThrowsRemaining: state.bonusThrowsRemaining + resolution.bonusThrowsEarned,
+      pendingThrows: state.pendingThrows.filter((entry) => entry.id !== pending.id),
+      throwsRemaining: state.throwsRemaining + resolution.bonusThrowsEarned,
     },
-    resolution.capturedPieceIds.length > 0
-      ? `${state.currentPlayerId}님이 상대 말을 잡았습니다.`
-      : `${state.currentPlayerId}님이 말을 이동했습니다.`,
+    `${state.currentPlayerId}님이 ${resultName}${instrumentParticle(resultName)} `
+    + `${captured ? "상대 말을 잡았습니다." : "말을 이동했습니다."}`,
   );
 
   if (resolution.finishedOwnerId) {
     return {
       ...clearedTurnSelection(afterMove),
       turnStage: "COMPLETE",
+      pendingThrows: [],
+      throwsRemaining: 0,
       winnerId: resolution.finishedOwnerId,
     };
   }
 
-  return awaitBonusOrEndTurn(afterMove);
+  return continueTurn(
+    captured
+      ? withEvent(afterMove, `${state.currentPlayerId}님이 한 번 더 던집니다.`)
+      : afterMove,
+  );
 }
 
 function applyThrow(state: GameState, command: Extract<GameCommand, { type: "THROW" }>): GameState {
   requireStage(state, "AWAITING_THROW");
   const throwEventId = `event-${state.events.length + 1}`;
-  const bonusThrowsRemaining =
-    Math.max(0, state.bonusThrowsRemaining - 1) + command.outcome.bonusThrows;
-  const legalPieceIds = getLegalPieceIds(
-    state.pieces,
-    currentController(state),
-    command.outcome.distance,
-  );
+  const outcome: ThrowOutcome = {
+    ...command.outcome,
+    sticks: [...command.outcome.sticks] as ThrowOutcome["sticks"],
+  };
+  const resultName = RESULT_NAMES[outcome.result];
   const thrownState = withEvent(
     {
       ...clearedTurnSelection(state),
-      turnStage: "AWAITING_PIECE",
-      lastThrow: { ...command.outcome, sticks: [...command.outcome.sticks] as ThrowOutcome["sticks"] },
+      turnStage: "AWAITING_THROW",
+      lastThrow: outcome,
       lastThrowEventId: throwEventId,
-      bonusThrowsRemaining,
-      legalPieceIds,
+      pendingThrows: [
+        ...state.pendingThrows,
+        { id: throwEventId, result: outcome.result, distance: outcome.distance },
+      ],
+      throwsRemaining: state.throwsRemaining - 1 + outcome.bonusThrows,
     },
-    `${state.currentPlayerId}님이 ${RESULT_NAMES[command.outcome.result]}를 던졌습니다.`,
+    `${state.currentPlayerId}님이 ${resultName}${objectParticle(resultName)} 던졌습니다.`,
   );
 
-  if (legalPieceIds.length > 0) {
-    return thrownState;
+  return continueTurn(
+    outcome.bonusThrows > 0
+      ? withEvent(thrownState, `${state.currentPlayerId}님이 한 번 더 던집니다.`)
+      : thrownState,
+  );
+}
+
+function requirePendingThrow(state: GameState, throwId: string): PendingThrow {
+  const pending = state.pendingThrows.find((entry) => entry.id === throwId);
+  if (!pending) {
+    throw new GameActionError("사용할 수 없는 윷 결과입니다.");
   }
+  return pending;
+}
 
-  return awaitBonusOrEndTurn(
-    withEvent(thrownState, `${state.currentPlayerId}님은 이동할 수 있는 말이 없습니다.`),
-  );
+function requireSelectablePiece(state: GameState, pending: PendingThrow, pieceId: string): Piece {
+  const legalPieceIds = getLegalPieceIds(state.pieces, currentController(state), pending.distance);
+  const piece = state.pieces.find((candidate) => candidate.id === pieceId);
+  if (!piece || !legalPieceIds.includes(pieceId)) {
+    throw new GameActionError("선택할 수 없는 말입니다.");
+  }
+  return piece;
 }
 
 function applyPieceSelection(
@@ -220,32 +307,18 @@ function applyPieceSelection(
   command: Extract<GameCommand, { type: "SELECT_PIECE" }>,
 ): GameState {
   requireStage(state, "AWAITING_PIECE");
-  if (!state.lastThrow) {
-    throw new Error("윷 결과가 없습니다.");
-  }
-
-  const legalPieceIds = getLegalPieceIds(
-    state.pieces,
-    currentController(state),
-    state.lastThrow.distance,
-  );
-  if (!legalPieceIds.includes(command.pieceId)) {
-    throw new GameActionError("선택할 수 없는 말입니다.");
-  }
-
-  const selectedPiece = state.pieces.find((piece) => piece.id === command.pieceId);
-  if (!selectedPiece) {
-    throw new Error("선택할 수 없는 말입니다.");
-  }
-  const options = getLegalMoveOptions(selectedPiece, state.lastThrow.distance);
+  const pending = requirePendingThrow(state, command.throwId);
+  const selectedPiece = requireSelectablePiece(state, pending, command.pieceId);
+  const options = getLegalMoveOptions(selectedPiece, pending.distance);
 
   if (options.length === 1) {
-    return resolveMove(state, command.pieceId, options[0]);
+    return resolveMove(state, pending, command.pieceId, options[0]);
   }
 
   return {
     ...state,
     turnStage: "AWAITING_ROUTE",
+    selectedThrowId: pending.id,
     selectedPieceId: command.pieceId,
     legalPieceIds: [],
     legalRoutes: options.map((option) => option.routeId),
@@ -258,29 +331,20 @@ function applyRouteSelection(
   command: Extract<GameCommand, { type: "SELECT_ROUTE" }>,
 ): GameState {
   requireStage(state, "AWAITING_ROUTE");
-  if (!state.selectedPieceId || !state.lastThrow) {
+  if (!state.selectedPieceId || !state.selectedThrowId) {
     throw new Error("선택된 말이나 윷 결과가 없습니다.");
   }
 
-  const legalPieceIds = getLegalPieceIds(
-    state.pieces,
-    currentController(state),
-    state.lastThrow.distance,
+  const pending = requirePendingThrow(state, state.selectedThrowId);
+  const selectedPiece = requireSelectablePiece(state, pending, state.selectedPieceId);
+  const option = getLegalMoveOptions(selectedPiece, pending.distance).find(
+    (candidate) => candidate.routeId === command.routeId,
   );
-  if (!legalPieceIds.includes(state.selectedPieceId)) {
-    throw new Error("선택할 수 없는 말입니다.");
-  }
-  const selectedPiece = state.pieces.find((piece) => piece.id === state.selectedPieceId);
-  const option = selectedPiece
-    ? getLegalMoveOptions(selectedPiece, state.lastThrow.distance).find(
-        (candidate) => candidate.routeId === command.routeId,
-      )
-    : undefined;
   if (!option) {
     throw new GameActionError("선택할 수 없는 경로입니다.");
   }
 
-  return resolveMove(state, state.selectedPieceId, option);
+  return resolveMove(state, pending, state.selectedPieceId, option);
 }
 
 export function applyGameCommand(state: GameState, command: GameCommand): GameState {
@@ -317,6 +381,12 @@ export function toPublicGameState(
       ...(piece.position ? { nodeId: piece.position.nodeId } : {}),
       stackSize: stackSizeFor(piece, state.pieces),
     })),
+    pendingThrows: pendingThrowChoices(state).map((choice) => ({
+      id: choice.id,
+      result: choice.result,
+      legalPieceIds: [...choice.legalPieceIds],
+    })),
+    throwsRemaining: state.throwsRemaining,
     legalPieceIds: [...state.legalPieceIds],
     legalRoutes: state.pendingMoveOptions.map((option) => ({
       routeId: option.routeId,

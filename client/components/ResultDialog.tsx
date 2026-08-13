@@ -4,18 +4,20 @@ import { useEffect, useRef, type KeyboardEvent } from "react";
 
 interface ResultDialogProps {
   winnerName: string;
+  /** 같은 참가자와 팀 그대로 대기실로 돌아가 한 판 더 준비한다. */
+  onPlayAgain: () => void;
   onReturnToLobby: () => void;
 }
 
-export function ResultDialog({ winnerName, onReturnToLobby }: ResultDialogProps) {
+export function ResultDialog({ winnerName, onPlayAgain, onReturnToLobby }: ResultDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const returnButtonRef = useRef<HTMLButtonElement>(null);
+  const playAgainButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    returnButtonRef.current?.focus();
+    playAgainButtonRef.current?.focus();
     return () => {
       if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
@@ -54,9 +56,22 @@ export function ResultDialog({ winnerName, onReturnToLobby }: ResultDialogProps)
         <p className="result-dialog__eyebrow">경기 종료</p>
         <h2 id="result-dialog-title">경기 결과</h2>
         <p className="result-dialog__winner"><strong>{winnerName}</strong> 승리!</p>
-        <button ref={returnButtonRef} type="button" onClick={onReturnToLobby}>
-          로비로 돌아가기
-        </button>
+        <div className="result-dialog__actions">
+          <button
+            ref={playAgainButtonRef}
+            type="button"
+            className="result-dialog__again"
+            onClick={onPlayAgain}
+          >
+            같은 사람들과 다시 하기
+          </button>
+          <button type="button" className="result-dialog__leave" onClick={onReturnToLobby}>
+            로비로 돌아가기
+          </button>
+        </div>
+        <p className="result-dialog__hint">
+          다시 하기를 누르면 참가자와 팀을 그대로 두고 대기실로 돌아갑니다.
+        </p>
       </dialog>
     </div>
   );

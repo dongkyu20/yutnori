@@ -29,6 +29,8 @@ function gameSnapshot(overrides: Partial<PublicRoomSnapshot> = {}): PublicRoomSn
       turnStage: "AWAITING_THROW",
       actionExpiresAt: null,
       pieces: [],
+      pendingThrows: [],
+      throwsRemaining: 0,
       legalPieceIds: [],
       legalRoutes: [],
       lastThrow: null,
@@ -43,6 +45,7 @@ describe("finished game chrome", () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("keeps the newest 50 events in chronological order and announces each appended event once by id", () => {
@@ -107,21 +110,61 @@ describe("finished game chrome", () => {
     expect(screen.getByRole("status", { name: "실시간 반응" })).toBeEmptyDOMElement();
   });
 
-  it("moves focus into the winner dialog, traps keyboard focus, and invokes return", async () => {
+  it("moves focus into the winner dialog, traps keyboard focus, and offers both endings", async () => {
     const user = userEvent.setup();
+    const onPlayAgain = vi.fn();
     const onReturnToLobby = vi.fn();
-    render(<ResultDialog winnerName="민수" onReturnToLobby={onReturnToLobby} />);
+    render(
+      <ResultDialog winnerName="민수" onPlayAgain={onPlayAgain} onReturnToLobby={onReturnToLobby} />,
+    );
 
     const dialog = screen.getByRole("dialog", { name: "경기 결과" });
+    const playAgain = screen.getByRole("button", { name: "같은 사람들과 다시 하기" });
     const returnButton = screen.getByRole("button", { name: "로비로 돌아가기" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(returnButton).toHaveFocus();
+    // 한 판 더가 기본 행동이라 먼저 초점을 받는다.
+    expect(playAgain).toHaveFocus();
     await user.tab();
     expect(returnButton).toHaveFocus();
+    await user.tab();
+    expect(playAgain).toHaveFocus();
     await user.tab({ shift: true });
     expect(returnButton).toHaveFocus();
+
+    await user.click(playAgain);
+    expect(onPlayAgain).toHaveBeenCalledTimes(1);
     await user.click(returnButton);
     expect(onReturnToLobby).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks the server for a rematch with the current room version", async () => {
+    const user = userEvent.setup();
+    const sendCommand = vi.fn();
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000009");
+    const finished = gameSnapshot();
+    const snapshot: PublicRoomSnapshot = {
+      ...finished,
+      phase: "finished",
+      game: { ...finished.game!, turnStage: "COMPLETE", winnerId: "player-1" },
+    };
+    render(
+      <GameScreen
+        snapshot={snapshot}
+        playerId="player-2"
+        sendCommand={sendCommand}
+        leaveRoom={() => undefined}
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "경기 결과" })).toHaveTextContent("민수 승리!");
+    await user.click(screen.getByRole("button", { name: "같은 사람들과 다시 하기" }));
+
+    // 방장이 아니어도 부를 수 있고, 서버는 버전으로 뒤늦은 요청을 걸러낸다.
+    expect(sendCommand).toHaveBeenCalledWith({
+      type: "PLAY_AGAIN",
+      roomVersion: 18,
+      requestId: "00000000-0000-4000-8000-000000000009",
+    });
   });
 
   it("moves focus to the real lobby after the result action replaces the game screen", async () => {
@@ -134,7 +177,13 @@ describe("finished game chrome", () => {
     function ResultToLobbyHarness() {
       const [inGame, setInGame] = useState(true);
       return inGame
-        ? <ResultDialog winnerName="민수" onReturnToLobby={() => setInGame(false)} />
+        ? (
+          <ResultDialog
+            winnerName="민수"
+            onPlayAgain={() => undefined}
+            onReturnToLobby={() => setInGame(false)}
+          />
+        )
         : <Lobby session={lobbySession} />;
     }
     render(<ResultToLobbyHarness />);

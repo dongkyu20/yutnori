@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { chooseAutoCommand } from "../../server/autoAction";
 import { createGame } from "../../server/game/reducer";
-import type { GameState } from "../../server/game/types";
+import type { GameState, PendingThrow } from "../../server/game/types";
 
 const game = (): GameState =>
   createGame({ mode: "individual", players: [{ id: "A1" }, { id: "B1" }] });
+
+const awaitingPiece = (pendingThrows: PendingThrow[]): GameState => ({
+  ...game(),
+  turnStage: "AWAITING_PIECE",
+  throwsRemaining: 0,
+  pendingThrows,
+});
 
 describe("chooseAutoCommand", () => {
   it("uses the authoritative throw generator while awaiting a throw", () => {
@@ -15,24 +22,34 @@ describe("chooseAutoCommand", () => {
       actorId: "A1",
       outcome: {
         sticks: [true, true, true, true],
-        result: "MO",
-        distance: 5,
+        result: "YUT",
+        distance: 4,
         bonusThrows: 1,
       },
     });
   });
 
-  it("selects a legal piece using the injected random value", () => {
-    const state = {
-      ...game(),
-      turnStage: "AWAITING_PIECE" as const,
-      legalPieceIds: ["A1-1", "A1-2", "A1-3"],
-    };
+  it("selects a held result and one of its legal pieces using the injected random value", () => {
+    const state = awaitingPiece([{ id: "event-1", result: "DO", distance: 1 }]);
 
     expect(chooseAutoCommand(state, () => 0.5)).toEqual({
       type: "SELECT_PIECE",
       actorId: "A1",
-      pieceId: "A1-2",
+      throwId: "event-1",
+      pieceId: "A1-3",
+    });
+  });
+
+  it("never picks a held result that cannot move any piece", () => {
+    const state = awaitingPiece([
+      { id: "event-1", result: "BACK_DO", distance: -1 },
+      { id: "event-3", result: "GAE", distance: 2 },
+    ]);
+
+    expect(chooseAutoCommand(state, () => 0)).toMatchObject({
+      type: "SELECT_PIECE",
+      throwId: "event-3",
+      pieceId: "A1-1",
     });
   });
 

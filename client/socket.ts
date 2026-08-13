@@ -35,11 +35,13 @@ interface ServerToClientEvents {
 
 export type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
+const DEFAULT_GAME_SERVER_URL = "http://localhost:3001";
+
 export function createGameSocket(
   reconnectToken: string | null,
   retryOptions: SocketRetryOptions = PRODUCTION_SOCKET_RETRY_OPTIONS,
 ): GameSocket {
-  return io(process.env.NEXT_PUBLIC_GAME_SERVER_URL, {
+  return io(process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? DEFAULT_GAME_SERVER_URL, {
     autoConnect: false,
     auth: reconnectToken ? { reconnectToken } : undefined,
     ...retryOptions,

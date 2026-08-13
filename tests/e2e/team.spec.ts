@@ -12,6 +12,7 @@ import {
   roomVersion,
   startGame,
   teamPieceIds,
+  throwPending,
   waitForVersionAfter,
   type BrowserPlayer,
 } from "./helpers";
@@ -59,7 +60,16 @@ test("eight isolated players fill teams A-D and share pieces in interleaved turn
       await expect(players[index].page.getByRole("button", { name: "윷 던지기" })).toBeEnabled();
       await expect(players[teammateIndex].page.getByRole("button", { name: "윷 던지기" })).toBeDisabled();
       await performLegalAction(players);
-      const afterThrow = await currentNickname(host.page);
+      let afterThrow = await currentNickname(host.page);
+      // 윷이나 모는 던질 기회를 더 주므로, 말을 고르는 단계가 될 때까지 계속 던진다.
+      let bonusThrows = 0;
+      while (afterThrow === expectedNickname && (await throwPending(players[index].page))) {
+        if ((bonusThrows += 1) > 50) {
+          throw new Error(`${expectedNickname}의 보너스 던지기가 끝나지 않았습니다.`);
+        }
+        await performLegalAction(players);
+        afterThrow = await currentNickname(host.page);
+      }
       if (afterThrow === expectedNickname) {
         const controlledPieceIds = await enabledPieceIds(players[index].page);
         expect(controlledPieceIds.length).toBeGreaterThan(0);
