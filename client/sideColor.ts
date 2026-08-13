@@ -7,6 +7,24 @@ import type { PublicGameState, TeamId } from "../shared/protocol";
 export const SIDE_COUNT = 4;
 export const SIDE_NAMES = ["주홍", "청록", "치자", "먹"] as const;
 
+export interface SideColor {
+  /** 밝은 쪽. 무늬의 넓은 띠. */
+  base: number;
+  /** 어두운 쪽. 무늬의 좁은 띠와 그림자. */
+  deep: number;
+}
+
+/**
+ * 편 색. CSS와 3D가 같은 값을 써야 하므로 여기를 단일 출처로 삼는다.
+ * globals.css의 .yut-piece--side-N과 어긋나면 sideColor 테스트가 깨진다.
+ */
+export const SIDE_COLORS: readonly SideColor[] = Object.freeze([
+  { base: 0xc84a35, deep: 0x782718 },
+  { base: 0x147d73, deep: 0x084841 },
+  { base: 0xd5a62d, deep: 0x76590d },
+  { base: 0x606966, deep: 0x1f2724 },
+]);
+
 const TEAM_SLOTS: Readonly<Record<TeamId, number>> = { A: 0, B: 1, C: 2, D: 3 };
 
 type Piece = PublicGameState["pieces"][number];

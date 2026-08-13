@@ -341,10 +341,10 @@ button, input, select, textarea { min-height: 44px; }
 .yut-piece { min-width: 3.2rem; min-height: 3.2rem; border: 3px solid var(--ink); border-radius: 50%; background: #606966; color: #FFF; font-weight: 900; text-shadow: 0 1px 2px #000; box-shadow: 0 2px 0 var(--ink); cursor: pointer; }
 .yut-board__pieces .yut-piece { position: absolute; left: var(--node-x); top: var(--node-y); transform: translate(-50%, -50%); }
 /* 색만으로 구분하지 않도록 편마다 무늬 방향까지 다르게 준다. */
-.yut-piece--side-0 { background: repeating-linear-gradient(45deg, var(--vermilion) 0 7px, #782718 7px 14px); }
-.yut-piece--side-1 { background: repeating-linear-gradient(-45deg, var(--jade) 0 7px, #084841 7px 14px); }
-.yut-piece--side-2 { background: repeating-radial-gradient(circle, var(--gold) 0 4px, #76590D 5px 9px); }
-.yut-piece--side-3 { background: repeating-linear-gradient(90deg, #606966 0 6px, var(--ink) 6px 12px); }
+.yut-piece--side-0 { background: repeating-linear-gradient(45deg, #C84A35 0 7px, #782718 7px 14px); }
+.yut-piece--side-1 { background: repeating-linear-gradient(-45deg, #147D73 0 7px, #084841 7px 14px); }
+.yut-piece--side-2 { background: repeating-radial-gradient(circle, #D5A62D 0 4px, #76590D 5px 9px); }
+.yut-piece--side-3 { background: repeating-linear-gradient(90deg, #606966 0 6px, #1F2724 6px 12px); }
 .yut-piece:disabled { cursor: default; opacity: .68; filter: grayscale(.25); }
 .yut-piece__team, .yut-piece__count { display: block; line-height: 1.05; }
 .yut-piece__count { font-size: .78rem; }
