@@ -32,6 +32,7 @@ function createGame(overrides: Partial<PublicGameState> = {}): PublicGameState {
       result: "GAE",
       sticks: [true, true, false, false],
     },
+    lastMove: null,
     winnerId: null,
     events: [{ id: "event-1", message: "민수가 개를 던졌습니다.", createdAt: 1 }],
     ...overrides,

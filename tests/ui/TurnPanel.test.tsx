@@ -18,6 +18,7 @@ function createGame(overrides: Partial<PublicGameState> = {}): PublicGameState {
     legalPieceIds: [],
     legalRoutes: [],
     lastThrow: null,
+    lastMove: null,
     winnerId: null,
     events: [],
     ...overrides,

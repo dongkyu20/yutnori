@@ -206,6 +206,82 @@ describe("game reducer", () => {
     expect(next.pendingThrows.map((pending) => pending.result)).toEqual(["YUT"]);
   });
 
+  it("traces a plain move with the path it stepped through", () => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O1", routeId: "OUTER" });
+    state = throwYut(state, "A1", "GAE", 2);
+
+    const next = movePiece(state, "A1", "A1-1");
+
+    expect(next.lastMove).toEqual({
+      eventId: next.events.at(-1)?.id,
+      pieceIds: ["A1-1"],
+      fromNodeId: "O1",
+      path: ["O2", "O3"],
+      capturedPieceIds: [],
+    });
+  });
+
+  it("traces the captured pieces so the board can knock them back", () => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O1", routeId: "OUTER" });
+    state = placePiece(state, "B1-1", { nodeId: "O2", routeId: "OUTER" });
+    state = throwYut(state, "A1", "DO", 1);
+
+    const next = movePiece(state, "A1", "A1-1");
+
+    expect(next.lastMove?.capturedPieceIds).toEqual(["B1-1"]);
+    expect(next.lastMove?.path).toEqual(["O2"]);
+    expect(next.lastMove?.fromNodeId).toBe("O1");
+  });
+
+  it("traces a piece leaving the home rack with no departure node", () => {
+    const state = throwYut(individualGame(), "A1", "DO", 1);
+
+    const next = movePiece(state, "A1", "A1-1");
+
+    expect(next.lastMove?.fromNodeId).toBeNull();
+    expect(next.lastMove?.path).toEqual(["O1"]);
+  });
+
+  it("traces a back-do stepping backwards", () => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O3", routeId: "OUTER" });
+    state = throwYut(state, "A1", "BACK_DO", -1);
+
+    const next = movePiece(state, "A1", "A1-1");
+
+    expect(next.lastMove?.path).toEqual(["O2"]);
+    expect(next.lastMove?.fromNodeId).toBe("O3");
+  });
+
+  it("traces every piece of a stack and the virtual finish node", () => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O19", routeId: "OUTER" });
+    state = placePiece(state, "A1-2", { nodeId: "O19", routeId: "OUTER" });
+    // 같은 칸의 두 말을 한 묶음으로 묶어 함께 움직이게 한다.
+    state = {
+      ...state,
+      pieces: state.pieces.map((piece) =>
+        piece.id === "A1-1" || piece.id === "A1-2" ? { ...piece, stackId: "A1-1" } : piece,
+      ),
+    };
+    state = throwYut(state, "A1", "DO", 1);
+
+    const next = movePiece(state, "A1", "A1-1");
+
+    expect(next.lastMove?.pieceIds).toEqual(["A1-1", "A1-2"]);
+    expect(next.lastMove?.path).toEqual(["FINISH"]);
+  });
+
+  it("publishes the trace to the client and keeps the arrays separate", () => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O1", routeId: "OUTER" });
+    state = throwYut(state, "A1", "GAE", 2);
+    const next = movePiece(state, "A1", "A1-1");
+
+    const published = toPublicGameState(next);
+
+    expect(published.lastMove?.path).toEqual(["O2", "O3"]);
+    expect(published.lastMove?.path).not.toBe(next.lastMove?.path);
+    expect(toPublicGameState(individualGame()).lastMove).toBeNull();
+  });
+
   it("consumes a no-legal-move back-do and rotates the turn", () => {
     const next = throwYut(individualGame(), "A1", "BACK_DO", -1);
 

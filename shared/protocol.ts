@@ -27,6 +27,14 @@ export interface PublicGameState {
   legalPieceIds: string[];
   legalRoutes: Array<{ routeId: string; destinationNodeId: string }>;
   lastThrow: { eventId: string; result: YutResult; sticks: [boolean, boolean, boolean, boolean] } | null;
+  /** 마지막 이동의 자취. 판이 말을 걸어가게 하고 잡기 연출을 재생하는 데 쓴다. */
+  lastMove: {
+    eventId: string;
+    pieceIds: string[];
+    fromNodeId: string | null;
+    path: string[];
+    capturedPieceIds: string[];
+  } | null;
   winnerId: string | null;
   events: Array<{ id: string; message: string; createdAt: number }>;
 }

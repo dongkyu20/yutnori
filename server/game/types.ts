@@ -52,6 +52,20 @@ export interface MoveResolution {
   finishedOwnerId?: string;
 }
 
+/** 한 번의 이동이 어떻게 벌어졌는지. 판이 연출하는 데만 쓰고 판정에는 쓰지 않는다. */
+export interface MoveTrace {
+  /** 이 이동을 기록한 이벤트의 id. 연출을 한 번만 재생하는 열쇠. */
+  eventId: string;
+  /** 함께 움직인 말. 업힌 묶음이면 여럿이다. */
+  pieceIds: string[];
+  /** 떠난 칸. 출발 대기에서 나왔으면 null. */
+  fromNodeId: string | null;
+  /** 밟고 지나간 칸을 순서대로. 마지막이 도착 칸이며, 참으로 나면 FINISH다. */
+  path: string[];
+  /** 이 이동으로 잡힌 상대 말. */
+  capturedPieceIds: string[];
+}
+
 export type TurnStage = "AWAITING_THROW" | "AWAITING_PIECE" | "AWAITING_ROUTE" | "COMPLETE";
 
 export interface GamePlayer {
@@ -74,6 +88,7 @@ export interface GameState {
   pieces: Piece[];
   lastThrow: ThrowOutcome | null;
   lastThrowEventId: string | null;
+  lastMove: MoveTrace | null;
   pendingThrows: PendingThrow[];
   selectedThrowId: string | null;
   selectedPieceId: string | null;

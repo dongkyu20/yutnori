@@ -34,6 +34,7 @@ function gameSnapshot(overrides: Partial<PublicRoomSnapshot> = {}): PublicRoomSn
       legalPieceIds: [],
       legalRoutes: [],
       lastThrow: null,
+      lastMove: null,
       winnerId: null,
       events: [{ id: "event-1", message: "민수님의 차례입니다.", createdAt: 1 }],
     },

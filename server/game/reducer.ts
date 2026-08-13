@@ -81,6 +81,7 @@ export function createGame(input: CreateGameInput): GameState {
     pieces: input.mode === "team" ? createTeamPieces(players) : createIndividualPieces(players),
     lastThrow: null,
     lastThrowEventId: null,
+    lastMove: null,
     pendingThrows: [],
     selectedThrowId: null,
     selectedPieceId: null,
@@ -224,10 +225,12 @@ function resolveMove(
   pieceId: string,
   option: MoveOption,
 ): GameState {
+  // 이동 전 자리를 먼저 붙잡아 둔다. movePieces가 지나가면 이미 도착 칸으로 바뀐다.
+  const departureNodeId = state.pieces.find((piece) => piece.id === pieceId)?.position?.nodeId ?? null;
   const resolution = movePieces(state.pieces, { pieceId, option });
   const resultName = RESULT_NAMES[pending.result];
   const captured = resolution.capturedPieceIds.length > 0;
-  const afterMove = withEvent(
+  const moved = withEvent(
     {
       ...state,
       pieces: resolution.pieces,
@@ -237,6 +240,17 @@ function resolveMove(
     `${state.currentPlayerId}님이 ${resultName}${instrumentParticle(resultName)} `
     + `${captured ? "상대 말을 잡았습니다." : "말을 이동했습니다."}`,
   );
+  const afterMove: GameState = {
+    ...moved,
+    lastMove: {
+      // 방금 기록한 이동 이벤트의 id를 그대로 쓴다. 연출은 이 값이 바뀔 때만 재생한다.
+      eventId: moved.events[moved.events.length - 1].id,
+      pieceIds: [...resolution.movedPieceIds],
+      fromNodeId: departureNodeId,
+      path: [...option.traversed],
+      capturedPieceIds: [...resolution.capturedPieceIds],
+    },
+  };
 
   if (resolution.finishedOwnerId) {
     return {
@@ -397,6 +411,15 @@ export function toPublicGameState(
           eventId: state.lastThrowEventId ?? (() => { throw new Error("Throw event id is missing"); })(),
           result: state.lastThrow.result,
           sticks: [...state.lastThrow.sticks] as ThrowOutcome["sticks"],
+        }
+      : null,
+    lastMove: state.lastMove
+      ? {
+          eventId: state.lastMove.eventId,
+          pieceIds: [...state.lastMove.pieceIds],
+          fromNodeId: state.lastMove.fromNodeId,
+          path: [...state.lastMove.path],
+          capturedPieceIds: [...state.lastMove.capturedPieceIds],
         }
       : null,
     winnerId: state.winnerId,
