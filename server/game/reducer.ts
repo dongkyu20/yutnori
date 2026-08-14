@@ -1,5 +1,5 @@
 import type { GameMode, PublicGameState, TeamId } from "../../shared/protocol";
-import { getLegalMoveOptions, getLegalPieceIds, movePieces } from "./pieces";
+import { getLegalMoveOptions, getLegalMoves, getLegalPieceIds, movePieces } from "./pieces";
 import type {
   GameCommand,
   GameEvent,
@@ -163,17 +163,35 @@ function instrumentParticle(word: string): string {
 /**
  * 아직 쓰지 않은 윷 결과와 각 결과로 움직일 수 있는 말. 말 선택 단계에서만 채워진다.
  */
+/**
+ * 손에 든 결과마다 움직일 수 있는 말과 그 말이 갈 곳을 함께 낸다.
+ * 갈 곳은 말에 마우스를 올렸을 때 미리 보여 주는 데 쓰며, 두 목록은 한 번의 계산에서 나온다.
+ */
 export function pendingThrowChoices(
   state: GameState,
-): Array<{ id: string; result: ThrowOutcome["result"]; legalPieceIds: string[] }> {
+): Array<{
+  id: string;
+  result: ThrowOutcome["result"];
+  legalPieceIds: string[];
+  moves: Array<{ pieceId: string; destinationNodeId: string; path: string[]; finished: boolean }>;
+}> {
   const controller = state.turnStage === "AWAITING_PIECE" ? currentController(state) : null;
-  return state.pendingThrows.map((pending) => ({
-    id: pending.id,
-    result: pending.result,
-    legalPieceIds: controller
-      ? getLegalPieceIds(state.pieces, controller, pending.distance)
-      : [],
-  }));
+  return state.pendingThrows.map((pending) => {
+    const legalMoves = controller
+      ? getLegalMoves(state.pieces, controller, pending.distance)
+      : [];
+    return {
+      id: pending.id,
+      result: pending.result,
+      legalPieceIds: legalMoves.map((move) => move.pieceId),
+      moves: legalMoves.map((move) => ({
+        pieceId: move.pieceId,
+        destinationNodeId: move.option.nodeId,
+        path: [...move.option.traversed],
+        finished: move.option.finished,
+      })),
+    };
+  });
 }
 
 function beginMovePhase(state: GameState): GameState {
@@ -399,6 +417,7 @@ export function toPublicGameState(
       id: choice.id,
       result: choice.result,
       legalPieceIds: [...choice.legalPieceIds],
+      moves: choice.moves.map((move) => ({ ...move, path: [...move.path] })),
     })),
     throwsRemaining: state.throwsRemaining,
     legalPieceIds: [...state.legalPieceIds],

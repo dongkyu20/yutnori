@@ -22,7 +22,20 @@ export interface PublicGameState {
   turnStage: "AWAITING_THROW" | "AWAITING_PIECE" | "AWAITING_ROUTE" | "COMPLETE";
   actionExpiresAt: number | null;
   pieces: Array<{ id: string; ownerId: string; teamId?: TeamId; status: "HOME" | "BOARD" | "FINISHED"; nodeId?: string; stackSize: number }>;
-  pendingThrows: Array<{ id: string; result: YutResult; legalPieceIds: string[] }>;
+  pendingThrows: Array<{
+    id: string;
+    result: YutResult;
+    legalPieceIds: string[];
+    /** 이 결과로 각 말이 갈 곳. 말에 마우스를 올렸을 때 미리 보여 준다. */
+    moves: Array<{
+      pieceId: string;
+      /** 도착 칸. 참으로 나면 판에 좌표가 없는 FINISH다. */
+      destinationNodeId: string;
+      /** 밟고 지나갈 칸을 순서대로. */
+      path: string[];
+      finished: boolean;
+    }>;
+  }>;
   throwsRemaining: number;
   legalPieceIds: string[];
   legalRoutes: Array<{ routeId: string; destinationNodeId: string }>;

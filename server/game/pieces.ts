@@ -34,15 +34,25 @@ export function getLegalMoveOptions(piece: Piece, distance: number): MoveOption[
   return piece.position ? getMoveOptions(piece.position, distance) : [];
 }
 
-export function getLegalPieceIds(
+/** 움직일 수 있는 말과 그 말이 갈 곳. 업힌 묶음은 대표 말 하나로만 센다. */
+export interface LegalMove {
+  pieceId: string;
+  option: MoveOption;
+}
+
+export function getLegalMoves(
   pieces: readonly Piece[],
   controller: PieceController,
   distance: number,
-): string[] {
+): LegalMove[] {
   const seenStacks = new Set<string>();
 
   return pieces.flatMap((piece) => {
-    if (!isControlledBy(piece, controller) || getLegalMoveOptions(piece, distance).length === 0) {
+    if (!isControlledBy(piece, controller)) {
+      return [];
+    }
+    const [option] = getLegalMoveOptions(piece, distance);
+    if (!option) {
       return [];
     }
 
@@ -53,8 +63,17 @@ export function getLegalPieceIds(
       seenStacks.add(piece.stackId);
     }
 
-    return [piece.id];
+    return [{ pieceId: piece.id, option }];
   });
+}
+
+/** 갈 곳까지 함께 구한 뒤 id만 추린다. 두 목록이 어긋날 수 없도록 계산은 한 번만 한다. */
+export function getLegalPieceIds(
+  pieces: readonly Piece[],
+  controller: PieceController,
+  distance: number,
+): string[] {
+  return getLegalMoves(pieces, controller, distance).map((move) => move.pieceId);
 }
 
 function homePiece(piece: Piece): Piece {

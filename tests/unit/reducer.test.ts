@@ -375,9 +375,26 @@ describe("game reducer", () => {
 
     expect(publicState.actionExpiresAt).toBe(12345);
     expect(publicState.throwsRemaining).toBe(0);
+    // 말마다 그 결과로 갈 곳까지 함께 실어 보낸다. 마우스를 올렸을 때 미리 보여 주는 값이다.
     expect(publicState.pendingThrows).toEqual([
-      { id: "event-1", result: "YUT", legalPieceIds: ["A1-1", "A1-2", "A1-3", "A1-4"] },
-      { id: "event-3", result: "BACK_DO", legalPieceIds: ["A1-1"] },
+      {
+        id: "event-1",
+        result: "YUT",
+        legalPieceIds: ["A1-1", "A1-2", "A1-3", "A1-4"],
+        moves: [
+          // 참으로 나는 말은 판에 좌표가 없는 FINISH로 간다.
+          { pieceId: "A1-1", destinationNodeId: "FINISH", path: ["FINISH"], finished: true },
+          { pieceId: "A1-2", destinationNodeId: "O4", path: ["O1", "O2", "O3", "O4"], finished: false },
+          { pieceId: "A1-3", destinationNodeId: "O4", path: ["O1", "O2", "O3", "O4"], finished: false },
+          { pieceId: "A1-4", destinationNodeId: "O4", path: ["O1", "O2", "O3", "O4"], finished: false },
+        ],
+      },
+      {
+        id: "event-3",
+        result: "BACK_DO",
+        legalPieceIds: ["A1-1"],
+        moves: [{ pieceId: "A1-1", destinationNodeId: "O18", path: ["O18"], finished: false }],
+      },
     ]);
     expect(publicState.pieces.find((piece) => piece.id === "A1-1")).toMatchObject({
       nodeId: "O19",
@@ -386,11 +403,52 @@ describe("game reducer", () => {
     expect(publicState).not.toHaveProperty("pendingMoveOptions");
   });
 
+  it("previews the shortcut a piece would take from a junction", () => {
+    // 길목에 정확히 선 말은 다음 이동에서 지름길로 빠진다. 미리 보기가 그 길을 그대로 보여 준다.
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O5", routeId: "OUTER" });
+    state = throwYut(state, "A1", "GAE", 2);
+
+    const preview = toPublicGameState(state).pendingThrows[0].moves
+      .find((move) => move.pieceId === "A1-1");
+
+    expect(preview).toEqual({
+      pieceId: "A1-1",
+      destinationNodeId: "D1_2",
+      path: ["D1_1", "D1_2"],
+      finished: false,
+    });
+  });
+
+  it("gives one preview per stack, not per piece riding it", () => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O1", routeId: "OUTER" });
+    state = placePiece(state, "A1-2", { nodeId: "O1", routeId: "OUTER" });
+    state = {
+      ...state,
+      pieces: state.pieces.map((piece) =>
+        piece.id === "A1-1" || piece.id === "A1-2" ? { ...piece, stackId: "A1-1" } : piece,
+      ),
+    };
+    state = throwYut(state, "A1", "DO", 1);
+
+    const { moves, legalPieceIds } = toPublicGameState(state).pendingThrows[0];
+
+    // 업힌 묶음은 대표 말 하나로만 나오고, 미리 보기도 그 하나에 달린다.
+    expect(moves.filter((move) => move.pieceId.startsWith("A1-"))).toContainEqual({
+      pieceId: "A1-1",
+      destinationNodeId: "O2",
+      path: ["O2"],
+      finished: false,
+    });
+    expect(moves.some((move) => move.pieceId === "A1-2")).toBe(false);
+    expect(moves.map((move) => move.pieceId)).toEqual(legalPieceIds);
+  });
+
   it("hides held results while the player still has to throw", () => {
     const state = throwYut(individualGame(), "A1", "MO", 5, 1);
 
+    // 아직 던질 차례이므로 고를 말도, 미리 보여 줄 자리도 없다.
     expect(toPublicGameState(state).pendingThrows).toEqual([
-      { id: "event-1", result: "MO", legalPieceIds: [] },
+      { id: "event-1", result: "MO", legalPieceIds: [], moves: [] },
     ]);
   });
 

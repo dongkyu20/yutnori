@@ -198,8 +198,8 @@ describe("TurnPanel", () => {
         game={createGame({
           turnStage: "AWAITING_PIECE",
           pendingThrows: [
-            { id: "event-1", result: "YUT", legalPieceIds: ["A-1"] },
-            { id: "event-3", result: "BACK_DO", legalPieceIds: [] },
+            { id: "event-1", result: "YUT", legalPieceIds: ["A-1"], moves: [] },
+            { id: "event-3", result: "BACK_DO", legalPieceIds: [], moves: [] },
           ],
         })}
         currentPlayerNickname="민수"
@@ -223,7 +223,7 @@ describe("TurnPanel", () => {
       <TurnPanel
         game={createGame({
           throwsRemaining: 1,
-          pendingThrows: [{ id: "event-1", result: "MO", legalPieceIds: [] }],
+          pendingThrows: [{ id: "event-1", result: "MO", legalPieceIds: [], moves: [] }],
         })}
         currentPlayerNickname="민수"
         isCurrentPlayer

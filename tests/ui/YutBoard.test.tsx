@@ -23,7 +23,7 @@ function createGame(overrides: Partial<PublicGameState> = {}): PublicGameState {
       { id: "A-3", ownerId: "A", teamId: "A", status: "HOME", stackSize: 1 },
       { id: "B-1", ownerId: "B", teamId: "B", status: "BOARD", nodeId: "O10", stackSize: 1 },
     ],
-    pendingThrows: [{ id: "event-1", result: "GAE", legalPieceIds: ["A-1", "A-3"] }],
+    pendingThrows: [{ id: "event-1", result: "GAE", legalPieceIds: ["A-1", "A-3"], moves: [] }],
     throwsRemaining: 0,
     legalPieceIds: ["A-1", "A-3"],
     legalRoutes: [],
