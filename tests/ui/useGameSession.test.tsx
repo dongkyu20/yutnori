@@ -2,11 +2,11 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import Fastify from "fastify";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGateway, type Gateway } from "../../server/gateway";
-import { RoomService } from "../../server/rooms";
+import { RoomError, RoomService } from "../../server/rooms";
 import type { ServerError } from "../../shared/protocol";
-import { createGameSocket } from "../../client/socket";
+import { createGameSocket, type GameSocket } from "../../client/socket";
 import { useGameSession } from "../../client/useGameSession";
 
 const RECONNECT_TOKEN_KEY = "hanpanyut.reconnectToken";
@@ -15,6 +15,58 @@ const terminalErrors: ServerError[] = [
   { code: "SESSION_NOT_FOUND", message: "session expired", recoverable: false },
   { code: "INVALID_SESSION", message: "session invalid", recoverable: false },
 ];
+
+function roomError(action: () => unknown): RoomError {
+  try {
+    action();
+  } catch (error) {
+    if (error instanceof RoomError) return error;
+    throw error;
+  }
+  throw new Error("RoomError가 발생해야 합니다.");
+}
+
+class LeavePendingSocket {
+  auth: Record<string, unknown> = {};
+  connected = false;
+  connectCalls = 0;
+  readonly commands: unknown[] = [];
+  private readonly handlers = new Map<string, Array<(payload: unknown) => void>>();
+  readonly io = {
+    on: () => this.io,
+    off: () => this.io,
+  };
+
+  on(event: string, handler: (payload: unknown) => void): this {
+    const handlers = this.handlers.get(event) ?? [];
+    handlers.push(handler);
+    this.handlers.set(event, handlers);
+    return this;
+  }
+
+  emit(event: string, payload: unknown): this {
+    if (event === "command") this.commands.push(payload);
+    return this;
+  }
+
+  connect(): this {
+    this.connectCalls += 1;
+    this.connected = true;
+    this.serverEmit("connect", undefined);
+    return this;
+  }
+
+  disconnect(): this {
+    if (!this.connected) return this;
+    this.connected = false;
+    this.serverEmit("disconnect", "io client disconnect");
+    return this;
+  }
+
+  serverEmit(event: string, payload: unknown): void {
+    for (const handler of this.handlers.get(event) ?? []) handler(payload);
+  }
+}
 
 describe("useGameSession terminal reconnect errors", () => {
   const servers: Array<ReturnType<typeof Fastify>> = [];
@@ -38,6 +90,7 @@ describe("useGameSession terminal reconnect errors", () => {
   }
 
   afterEach(async () => {
+    vi.useRealTimers();
     window.localStorage.clear();
     if (originalServerUrl === undefined) delete process.env.NEXT_PUBLIC_GAME_SERVER_URL;
     else process.env.NEXT_PUBLIC_GAME_SERVER_URL = originalServerUrl;
@@ -148,7 +201,10 @@ describe("useGameSession terminal reconnect errors", () => {
     gateway.io.on("connection", (socket) => handshakeTokens.push(socket.handshake.auth.reconnectToken));
     const { result, unmount } = renderHook(() => useGameSession());
 
-    await waitFor(() => expect(result.current.connectionState).toBe("connected"));
+    await waitFor(() => {
+      expect(result.current.connectionState).toBe("connected");
+      expect(result.current.snapshot).not.toBeNull();
+    });
     act(() => result.current.leaveRoom());
 
     await waitFor(() => {
@@ -158,7 +214,34 @@ describe("useGameSession terminal reconnect errors", () => {
       expect(handshakeTokens).toEqual([issuedSession.reconnectToken, undefined]);
     });
     expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBeNull();
+    // 자리까지 비워야 한다. 소켓만 끊으면 남은 사람들이 게임을 시작할 수 없다.
+    await waitFor(() => {
+      expect(roomError(() => roomService.reconnect(issuedSession.reconnectToken)).code)
+        .toBe("SESSION_NOT_FOUND");
+    });
     unmount();
+  });
+
+  it("does not reopen a socket after unmounting during the leave grace period", () => {
+    vi.useFakeTimers();
+    const roomService = new RoomService();
+    const issuedSession = roomService.createRoom({ nickname: "Host", mode: "individual" });
+    const socket = new LeavePendingSocket();
+    const socketFactory = () => socket as unknown as GameSocket;
+    const { result, unmount } = renderHook(() => useGameSession({
+      socketFactory,
+    }));
+    act(() => socket.serverEmit("snapshot", issuedSession.snapshot));
+    const initialConnectCalls = socket.connectCalls;
+
+    act(() => result.current.leaveRoom());
+    expect(socket.commands).toEqual([
+      expect.objectContaining({ type: "LEAVE_ROOM", roomVersion: issuedSession.snapshot.version }),
+    ]);
+    unmount();
+    act(() => vi.advanceTimersByTime(1_500));
+
+    expect(socket.connectCalls).toBe(initialConnectCalls);
   });
 
   it("reports reconnecting through a transport retry, connected after recovery, and offline after retries fail", async () => {

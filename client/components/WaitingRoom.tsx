@@ -12,11 +12,21 @@ interface WaitingRoomProps {
   /** 서버가 방금 거절한 명령이 있으면 그 까닭. */
   error?: ServerError | null;
   sendCommand: (command: InRoomCommand) => void;
+  /** 방을 떠난다. 자리와 고른 색이 함께 풀린다. */
+  leaveRoom?: () => void;
 }
 
 const TEAM_IDS: TeamId[] = ["A", "B", "C", "D"];
 
-export function WaitingRoom({ snapshot, playerId, error = null, sendCommand }: WaitingRoomProps) {
+const NOOP = (): void => undefined;
+
+export function WaitingRoom({
+  snapshot,
+  playerId,
+  error = null,
+  sendCommand,
+  leaveRoom = NOOP,
+}: WaitingRoomProps) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const isHost = playerId === snapshot.hostPlayerId;
@@ -69,7 +79,10 @@ export function WaitingRoom({ snapshot, playerId, error = null, sendCommand }: W
         <h1>대기실</h1>
         <p>참가 인원 {`${snapshot.players.length}/${capacity}`}</p>
         <p>방 코드: <strong>{snapshot.roomCode}</strong></p>
-        <button className="waiting-room__action" type="button" onClick={() => void copyRoomCode()}>방 코드 복사</button>
+        <div className="waiting-room__hero-actions">
+          <button className="waiting-room__action" type="button" onClick={() => void copyRoomCode()}>방 코드 복사</button>
+          <button className="room-leave" type="button" onClick={leaveRoom}>방 나가기</button>
+        </div>
         {copied && <p className="waiting-room__status" role="status">방 코드가 복사되었습니다.</p>}
         {copyError && <p className="waiting-room__status waiting-room__status--error" role="alert">방 코드를 직접 복사해주세요.</p>}
       </header>

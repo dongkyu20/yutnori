@@ -234,6 +234,21 @@ button, input, select, textarea { min-height: 44px; }
 .game-screen__header { display: flex; align-items: end; justify-content: space-between; gap: 1rem; border-bottom: 3px double var(--ink); padding-bottom: .75rem; }
 .game-screen__header h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 3rem); letter-spacing: -.08em; }
 .game-screen__header p { margin: 0; }
+.game-screen__header-side { display: grid; gap: .5rem; justify-items: end; }
+
+/* 방 나가기: 자주 누를 것이 아니므로 눈에 덜 띄게 두되, 찾을 수는 있어야 한다. */
+.room-leave {
+  border: 2px solid color-mix(in srgb, var(--vermilion) 55%, transparent);
+  border-radius: .8rem;
+  background: var(--paper);
+  color: var(--vermilion);
+  padding: .5rem .9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.room-leave:hover { background: color-mix(in srgb, var(--vermilion) 10%, var(--paper)); }
+.waiting-room__hero-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.waiting-room__hero-actions .waiting-room__action { width: auto; }
 .game-screen__header strong { color: var(--vermilion); letter-spacing: .12em; }
 .game-screen__eyebrow { color: var(--jade); font-size: .78rem; font-weight: 900; letter-spacing: .18em; text-transform: uppercase; }
 .connection-status { width: fit-content; margin: .75rem 0; border-radius: 999px; padding: .35rem .75rem; background: color-mix(in srgb, var(--jade) 12%, var(--paper)); font-size: .86rem; font-weight: 800; }
@@ -367,7 +382,8 @@ button, input, select, textarea { min-height: 44px; }
 }
 .yut-board__pieces { position: absolute; inset: 0; }
 /* 편 색을 아직 모를 때도 흰 글씨가 읽히도록 바탕색을 깔아 둔다. */
-.yut-piece { min-width: 3.2rem; min-height: 3.2rem; border: 3px solid var(--ink); border-radius: 50%; background: #606966; color: #FFF; font-weight: 900; text-shadow: 0 1px 2px #000; box-shadow: 0 2px 0 var(--ink); cursor: pointer; }
+/* 크기를 못 박아 둔다. 이름 길이에 따라 늘어나면 한쪽 편 말만 타원이 된다. */
+.yut-piece { width: 3.2rem; height: 3.2rem; min-width: 3.2rem; min-height: 3.2rem; padding: 0; overflow: hidden; border: 3px solid var(--ink); border-radius: 50%; background: #606966; color: #FFF; font-weight: 900; text-shadow: 0 1px 2px #000; box-shadow: 0 2px 0 var(--ink); cursor: pointer; }
 .yut-board__pieces .yut-piece { position: absolute; left: var(--node-x); top: var(--node-y); transform: translate(-50%, -50%); }
 /* 색만으로 구분하지 않도록 편마다 무늬 방향까지 다르게 준다. */
 .yut-piece--side-0 { background: repeating-linear-gradient(45deg, #C84A35 0 7px, #782718 7px 14px); }

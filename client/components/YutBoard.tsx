@@ -199,6 +199,15 @@ function groupPieces(pieces: readonly Piece[]): PieceGroup[] {
   return [...groups.values()];
 }
 
+/**
+ * 말 위에 얹을 짧은 표.
+ * 이름을 다 적으면 말이 이름 길이만큼 늘어나, 이름이 긴 편의 말만 타원이 된다.
+ * 온전한 이름은 aria-label에 남아 스크린 리더가 읽는다.
+ */
+function shortName(name: string): string {
+  return [...name].slice(0, 2).join("");
+}
+
 function controllerName(group: PieceGroup, players: PublicRoomSnapshot["players"]): string {
   if (group.teamId) return `${group.teamId}팀`;
   return players.find((player) => player.id === group.controllerId)?.nickname ?? group.controllerId;
@@ -287,7 +296,7 @@ export function YutBoard({
         onFocus={() => { if (enabled && legalPieceId) setPreviewPieceId(legalPieceId); }}
         onBlur={() => setPreviewPieceId(null)}
       >
-        <span className="yut-piece__team">{group.teamId ?? controllerName(group, players)}</span>
+        <span className="yut-piece__team">{group.teamId ?? shortName(controllerName(group, players))}</span>
         <span className="yut-piece__count"> ×{count}</span>
       </button>
     );

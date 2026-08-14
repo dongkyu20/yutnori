@@ -70,6 +70,23 @@ describe("WaitingRoom", () => {
     expect(alert).toHaveAttribute("data-error-code", "COLOR_TAKEN");
   });
 
+  it("offers a way out of the waiting room", async () => {
+    const user = userEvent.setup();
+    const leaveRoom = vi.fn();
+    render(
+      <WaitingRoom
+        snapshot={createSnapshot()}
+        playerId="host"
+        sendCommand={() => {}}
+        leaveRoom={leaveRoom}
+      />,
+    );
+
+    // 대기실에서는 되돌리기 쉬우므로 묻지 않고 바로 내보낸다.
+    await user.click(screen.getByRole("button", { name: "방 나가기" }));
+    expect(leaveRoom).toHaveBeenCalledTimes(1);
+  });
+
   it("renders individual occupancy and each player's connected ready status", () => {
     renderWaitingRoom(createSnapshot({
       players: [

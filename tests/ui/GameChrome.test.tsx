@@ -240,6 +240,29 @@ describe("finished game chrome", () => {
     expect(playersPanel).toHaveClass("game-panel--collapsed");
   });
 
+  it("asks before leaving a game in progress and stays put when the answer is no", async () => {
+    const user = userEvent.setup();
+    const leaveRoom = vi.fn();
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(
+      <GameScreen
+        snapshot={gameSnapshot()}
+        playerId="player-1"
+        connectionState="connected"
+        reactions={[]}
+        sendCommand={() => undefined}
+        leaveRoom={leaveRoom}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "방 나가기" }));
+    expect(leaveRoom).not.toHaveBeenCalled();
+
+    vi.mocked(window.confirm).mockReturnValue(true);
+    await user.click(screen.getByRole("button", { name: "방 나가기" }));
+    expect(leaveRoom).toHaveBeenCalledTimes(1);
+  });
+
   it("returns from a finished game by leaving only the current room session", async () => {
     const user = userEvent.setup();
     const commands: InRoomCommand[] = [];

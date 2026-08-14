@@ -17,6 +17,7 @@ export function GameApp() {
         playerId={session.playerId}
         error={session.error}
         sendCommand={session.sendCommand}
+        leaveRoom={session.leaveRoom}
       />
     );
   }

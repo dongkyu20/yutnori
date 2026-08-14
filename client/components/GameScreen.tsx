@@ -54,6 +54,13 @@ export function GameScreen({
       ? `${game.winnerId}팀`
       : snapshot.players.find((player) => player.id === game.winnerId)?.nickname ?? game.winnerId;
 
+  // 진행 중인 판을 두고 나가면 내 말이 걷힌다. 되돌릴 수 없으므로 한 번 묻는다.
+  const confirmLeave = (): void => {
+    if (snapshot.phase !== "playing" || window.confirm("지금 나가면 내 말이 판에서 걷힙니다. 나갈까요?")) {
+      leaveRoom();
+    }
+  };
+
   return (
     <main
       className="game-screen"
@@ -63,7 +70,10 @@ export function GameScreen({
     >
       <header className="game-screen__header">
         <div><p className="game-screen__eyebrow">우리의 한 판</p><h1>한판윷</h1></div>
-        <p>방 코드 <strong>{snapshot.roomCode}</strong></p>
+        <div className="game-screen__header-side">
+          <p>방 코드 <strong>{snapshot.roomCode}</strong></p>
+          <button type="button" className="room-leave" onClick={confirmLeave}>방 나가기</button>
+        </div>
       </header>
       <p
         className={`connection-status connection-status--${connectionState}`}

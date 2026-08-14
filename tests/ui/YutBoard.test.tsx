@@ -118,6 +118,28 @@ describe("YutBoard", () => {
     expect(screen.getByRole("button", { name: "B팀 말 1개 바깥 지점 10" })).toBeDisabled();
   });
 
+  it("keeps a long nickname from stretching the piece out of round", () => {
+    // 말 안에 이름을 다 적으면 이름이 긴 편의 말만 타원이 된다. 실제로 그렇게 보였다.
+    render(
+      <YutBoard
+        game={createGame({
+          pieces: [{ id: "A-1", ownerId: "player-a", status: "BOARD", nodeId: "O3", stackSize: 1 }],
+          pendingThrows: [],
+          legalPieceIds: [],
+        })}
+        players={[{ id: "player-a", nickname: "아주긴닉네임입니다", connected: true, ready: true, colorSlot: 0 }]}
+        playerId="player-a"
+        legalPieceIds={[]}
+        onSelectMove={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    // 온전한 이름은 소리로 읽히고, 눈에는 두 글자만 얹는다.
+    const piece = screen.getByRole("button", { name: /^아주긴닉네임입니다 말 1개/ });
+    expect(piece.querySelector(".yut-piece__team")?.textContent).toBe("아주");
+  });
+
   it("lets a second board piece take over the choice from the first", async () => {
     // 판 위에 말이 둘 이상이면 고른 말을 바꿔 가며 갈 곳을 견주게 된다.
     const user = userEvent.setup();
