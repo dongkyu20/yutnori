@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   advanceCurrentTurn,
   closePlayers,
@@ -11,13 +11,36 @@ import {
   readyPlayer,
   roomVersion,
   startGame,
-  teamPieceIds,
   throwPending,
   waitForVersionAfter,
   type BrowserPlayer,
 } from "./helpers";
 
 const TURN_ORDER = ["AOne", "BOne", "COne", "DOne", "ATwo", "BTwo", "CTwo", "DTwo"];
+
+interface TeamTurnView {
+  actionEnabled: boolean;
+  currentNickname: string | null;
+  pieceIds: string[];
+}
+
+/** 한 페이지의 차례·팀 말·조작 권한을 같은 DOM 시점에서 읽는다. */
+async function teamTurnView(page: Page, teamId: string): Promise<TeamTurnView> {
+  return page.evaluate((controllerId) => {
+    const pieceIds = [...document.querySelectorAll<HTMLElement>(`[data-controller-id='${controllerId}']`)]
+      .flatMap((element) => (element.dataset.pieceIds ?? "").split(","))
+      .filter(Boolean);
+    return {
+      actionEnabled: document.querySelector(
+        ".turn-panel__throw:enabled, button.yut-piece:enabled, button.yut-route:enabled",
+      ) !== null,
+      currentNickname: document
+        .querySelector<HTMLElement>(".game-player[aria-current='true'] strong")
+        ?.innerText.trim() ?? null,
+      pieceIds: [...new Set(pieceIds)].sort(),
+    };
+  }, teamId);
+}
 
 test("eight isolated players fill teams A-D and share pieces in interleaved turn order", async ({ browser }, testInfo) => {
   const players: BrowserPlayer[] = [];
@@ -51,14 +74,17 @@ test("eight isolated players fill teams A-D and share pieces in interleaved turn
     for (let index = 0; index < TURN_ORDER.length; index += 1) {
       const expectedNickname = TURN_ORDER[index];
       expect(await currentNickname(host.page)).toBe(expectedNickname);
-      for (const player of players) expect(await currentNickname(player.page)).toBe(expectedNickname);
 
       const teamId = expectedNickname[0];
       const expectedPieceIds = [`${teamId}-1`, `${teamId}-2`, `${teamId}-3`, `${teamId}-4`];
-      for (const player of players) expect(await teamPieceIds(player.page, teamId)).toEqual(expectedPieceIds);
       const teammateIndex = (index + 4) % 8;
-      await expect(players[index].page.getByRole("button", { name: "윷 던지기" })).toBeEnabled();
-      await expect(players[teammateIndex].page.getByRole("button", { name: "윷 던지기" })).toBeDisabled();
+      const views = await Promise.all(players.map((player) => teamTurnView(player.page, teamId)));
+      expect(views.map((view) => view.currentNickname)).toEqual(
+        Array.from({ length: players.length }, () => expectedNickname),
+      );
+      for (const view of views) expect(view.pieceIds).toEqual(expectedPieceIds);
+      expect(views[index].actionEnabled).toBe(true);
+      expect(views[teammateIndex].actionEnabled).toBe(false);
       await performLegalAction(players);
       let afterThrow = await currentNickname(host.page);
       // 윷이나 모는 던질 기회를 더 주므로, 말을 고르는 단계가 될 때까지 계속 던진다.
