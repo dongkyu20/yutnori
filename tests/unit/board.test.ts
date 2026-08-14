@@ -82,6 +82,33 @@ describe("Yut board routes", () => {
     ]);
   });
 
+  it("treats a back-do onto the start as a completed lap", () => {
+    // 도로 들어선 말이 곧바로 빽도를 만나면 출발점으로 되돌아간다.
+    // 이 방은 그것을 한 바퀴 돌아 참 앞에 선 것으로 친다.
+    expect(getMoveOptions({ nodeId: "O1", routeId: "OUTER" }, -1)).toEqual([
+      { routeId: "OUTER", nodeId: "RETURN", finished: false, traversed: ["RETURN"] },
+    ]);
+  });
+
+  it.each([1, 2, 3, 4, 5])("sends a lapped piece out with any forward result (%i)", (distance) => {
+    expect(getMoveOptions({ nodeId: "RETURN", routeId: "OUTER" }, distance)).toEqual([
+      { routeId: "OUTER", nodeId: "FINISH", finished: true, traversed: ["FINISH"] },
+    ]);
+  });
+
+  it("sends a lapped piece back to the do square on another back-do", () => {
+    expect(getMoveOptions({ nodeId: "RETURN", routeId: "OUTER" }, -1)).toEqual([
+      { routeId: "OUTER", nodeId: "O1", finished: false, traversed: ["O1"] },
+    ]);
+  });
+
+  it("keeps the start anchor itself walking the normal lap", () => {
+    // 출발 대기 자리는 여전히 판에 들어서는 기준점이다. 여기서 나아가면 참이 아니라 첫 칸이다.
+    expect(getMoveOptions({ nodeId: "O0", routeId: "OUTER" }, 1)).toEqual([
+      { routeId: "OUTER", nodeId: "O1", finished: false, traversed: ["O1"] },
+    ]);
+  });
+
   it("finishes on exact home arrival", () => {
     expect(getMoveOptions({ nodeId: "O19", routeId: "OUTER" }, 1)).toEqual([
       { routeId: "OUTER", nodeId: "FINISH", finished: true, traversed: ["FINISH"] },

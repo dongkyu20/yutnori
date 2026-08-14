@@ -315,6 +315,38 @@ describe("game reducer", () => {
     expect(next.events.at(-1)?.message).toContain("한 번 더 던집니다");
   });
 
+  it("steps a piece on the do square back onto the start as a lapped piece", () => {
+    // 도로 들어선 말이 곧바로 빽도를 만나면 출발점으로 되돌아간다. 한 바퀴 돈 것으로 친다.
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O1", routeId: "OUTER" });
+    state = throwYut(state, "A1", "BACK_DO", -1);
+
+    const next = movePiece(state, "A1", "A1-1");
+
+    expect(nodeOf(next, "A1-1")).toBe("RETURN");
+    expect(next.pieces.find((piece) => piece.id === "A1-1")?.status).toBe("BOARD");
+  });
+
+  it("finishes a lapped piece on any forward move", () => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "RETURN", routeId: "OUTER" });
+    state = throwYut(state, "A1", "GEOL", 3);
+
+    const next = movePiece(state, "A1", "A1-1");
+
+    expect(next.pieces.find((piece) => piece.id === "A1-1")?.status).toBe("FINISHED");
+    // 말 하나가 났을 뿐이므로 아직 승부는 나지 않는다.
+    expect(next.winnerId).toBeNull();
+  });
+
+  it("sends a lapped piece back to the do square when back-do comes again", () => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "RETURN", routeId: "OUTER" });
+    state = throwYut(state, "A1", "BACK_DO", -1);
+
+    const next = movePiece(state, "A1", "A1-1");
+
+    expect(nodeOf(next, "A1-1")).toBe("O1");
+    expect(next.pieces.find((piece) => piece.id === "A1-1")?.status).toBe("BOARD");
+  });
+
   it("consumes a no-legal-move back-do and rotates the turn", () => {
     const next = throwYut(individualGame(), "A1", "BACK_DO", -1);
 

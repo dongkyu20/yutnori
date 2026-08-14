@@ -22,8 +22,9 @@ function node(
 }
 
 export const BOARD_NODES: Readonly<Record<string, BoardNode>> = Object.freeze({
+  // 판에 들어서는 기준점. 말이 여기에 서서 쉬는 일은 없고, 대기 자리에서 몇 칸인지를 재는 데만 쓴다.
   O0: node({ OUTER: "O1" }, {}),
-  O1: node({ OUTER: "O2" }, { OUTER: "O0" }),
+  O1: node({ OUTER: "O2" }, { OUTER: "RETURN" }),
   O2: node({ OUTER: "O3" }, { OUTER: "O1" }),
   O3: node({ OUTER: "O4" }, { OUTER: "O2" }),
   O4: node({ OUTER: "O5" }, { OUTER: "O3" }),
@@ -56,6 +57,12 @@ export const BOARD_NODES: Readonly<Record<string, BoardNode>> = Object.freeze({
   D3_2: node({ CENTER_B: "CENTER" }, { CENTER_B: "D3_1" }),
   D4_2: node({ CENTER_B: "D4_1" }, { CENTER_B: "CENTER" }),
   D4_1: node({ CENTER_B: "FINISH" }, { CENTER_B: "D4_2" }),
+  /**
+   * 빽도로 출발점까지 되돌아온 자리. 판에는 시작점 모서리와 같은 곳에 그려지지만 O0과는 다른 칸이다.
+   * 한 바퀴를 돌아 참 앞에 선 것으로 쳐서, 다음에 앞으로 나아가면 몇 칸이 나오든 난다.
+   * 여기서 빽도가 또 나오면 원래 있던 도 자리로 돌아간다.
+   */
+  RETURN: node({ OUTER: "FINISH" }, { OUTER: "O1" }),
   FINISH: node({}, { OUTER: "O19", CENTER_A: "O19", CENTER_B: "D4_1" }),
 });
 

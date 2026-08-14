@@ -129,6 +129,8 @@ function nodeClass(nodeId: string): string {
 
 function describeNode(nodeId: string): string {
   if (nodeId === "CENTER") return "가운데 지점";
+  // 빽도로 출발점까지 되돌아온 자리. 판에는 시작점 모서리에 겹쳐 그려진다.
+  if (nodeId === "RETURN") return "되돌아온 출발점, 다음 이동에 완주";
   if (nodeId.startsWith("O")) return `바깥 지점 ${Number(nodeId.slice(1))}`;
   const match = /^D(\d)_(\d)$/.exec(nodeId);
   return match ? `대각선 지점 ${match[1]}-${match[2]}` : nodeId;
