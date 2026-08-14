@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import type { PublicGameState } from "../../shared/protocol";
-import { sideSlotOf } from "../sideColor";
 import {
   createBoardScene,
   nodeWorldPosition,
@@ -11,6 +10,7 @@ import {
 } from "../three/boardScene";
 import { impactAt, knockAt, timelineFor, vanishAt, walkAt } from "../three/moveAnimation";
 import { createPieceMesh, placePieceAt } from "../three/piece";
+import { boardGroups, stoneGroups, type StoneGroup } from "../three/stoneGroups";
 
 type ThreeModule = typeof import("three");
 type Piece = PublicGameState["pieces"][number];
@@ -52,59 +52,6 @@ interface Stage {
 function hasWebGL(): boolean {
   return typeof WebGL2RenderingContext !== "undefined"
     || typeof WebGLRenderingContext !== "undefined";
-}
-
-interface StoneGroup {
-  key: string;
-  nodeId: string;
-  slot: number;
-  stackSize: number;
-  pieceIds: string[];
-}
-
-/**
- * 말을 `칸:편`으로 모은다. 같은 칸의 같은 편은 업힌 한 덩이다.
- * `filter`로 모을 말을 고르고, `nodeIdOf`로 그 말이 놓일 칸을 정한다.
- * 잡기 연출은 대기 칸으로 돌아간 말을 도착 칸에 되살려야 하므로 이 둘을 갈아 끼운다.
- */
-function stoneGroups(
-  pieces: readonly Piece[],
-  slots: ReadonlyMap<string, number>,
-  filter: (piece: Piece) => boolean,
-  nodeIdOf: (piece: Piece) => string | undefined,
-): StoneGroup[] {
-  const groups = new Map<string, StoneGroup>();
-  pieces.forEach((piece) => {
-    if (!filter(piece)) return;
-    const nodeId = nodeIdOf(piece);
-    if (!nodeId) return;
-    const controllerId = piece.teamId ?? piece.ownerId;
-    const key = `${nodeId}:${controllerId}`;
-    const found = groups.get(key);
-    if (found) {
-      found.pieceIds.push(piece.id);
-      found.stackSize = Math.max(found.stackSize + 1, piece.stackSize);
-      return;
-    }
-    groups.set(key, {
-      key,
-      nodeId,
-      slot: sideSlotOf(slots, { teamId: piece.teamId, ownerId: piece.ownerId }) ?? 0,
-      stackSize: Math.max(1, piece.stackSize),
-      pieceIds: [piece.id],
-    });
-  });
-  return [...groups.values()];
-}
-
-/** 판 위에 실제로 서 있는 덩이. */
-function boardGroups(pieces: readonly Piece[], slots: ReadonlyMap<string, number>): StoneGroup[] {
-  return stoneGroups(
-    pieces,
-    slots,
-    (piece) => piece.status === "BOARD",
-    (piece) => piece.nodeId,
-  );
 }
 
 /**
