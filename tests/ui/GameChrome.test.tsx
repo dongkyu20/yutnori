@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EmojiReactions } from "../../client/components/EmojiReactions";
-import { EventLog } from "../../client/components/EventLog";
+import { EventAnnouncer } from "../../client/components/EventAnnouncer";
 import { GameScreen } from "../../client/components/GameScreen";
 import { Lobby, type LobbySessionApi } from "../../client/components/Lobby";
 import { ResultDialog } from "../../client/components/ResultDialog";
@@ -49,28 +49,28 @@ describe("finished game chrome", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps the newest 50 events in chronological order and announces each appended event once by id", () => {
-    const events = Array.from({ length: 51 }, (_, index) => ({
+  it("announces each appended event once by id, and stays silent about the past", () => {
+    const events = Array.from({ length: 51 }, (unusedValue, index) => ({
       id: `event-${index + 1}`,
       message: `기록 ${index + 1}`,
       createdAt: index + 1,
     }));
-    const { rerender } = render(<EventLog events={events} />);
+    const { rerender } = render(<EventAnnouncer events={events} />);
 
-    const list = screen.getByRole("list", { name: "경기 기록" });
-    expect(list.children).toHaveLength(50);
-    expect(list.firstElementChild).toHaveTextContent("기록 2");
-    expect(list.lastElementChild).toHaveTextContent("기록 51");
-    expect(screen.getByRole("status", { name: "새 경기 기록" })).toBeEmptyDOMElement();
-
-    expect(screen.getAllByRole("status", { name: "새 경기 기록" })).toHaveLength(1);
-    const sameMessage = "지우님이 윷을 던졌습니다.";
-    rerender(<EventLog events={[...events, { id: "event-52", message: sameMessage, createdAt: 52 }]} />);
+    // 눈에 보이는 기록은 없앴다. 남은 것은 스크린 리더가 읽는 알림 하나뿐이다.
+    expect(screen.queryByRole("list", { name: "경기 기록" })).not.toBeInTheDocument();
     const liveRegion = screen.getByRole("status", { name: "새 경기 기록" });
+    expect(liveRegion).toHaveClass("sr-only");
+    // 들어오자마자 지난 기록을 죽 읊지 않는다.
+    expect(liveRegion).toBeEmptyDOMElement();
+
+    const sameMessage = "지우님이 윷을 던졌습니다.";
+    rerender(<EventAnnouncer events={[...events, { id: "event-52", message: sameMessage, createdAt: 52 }]} />);
     const firstAnnouncement = liveRegion.firstElementChild;
     expect(firstAnnouncement).toHaveTextContent(sameMessage);
 
-    rerender(<EventLog events={[
+    // 같은 문구가 다시 와도 새 사건이면 다시 읽히도록 노드를 갈아 끼운다.
+    rerender(<EventAnnouncer events={[
       ...events,
       { id: "event-52", message: sameMessage, createdAt: 52 },
       { id: "event-53", message: sameMessage, createdAt: 53 },
@@ -228,17 +228,16 @@ describe("finished game chrome", () => {
     );
 
     const playersToggle = screen.getByRole("button", { name: "참가자 패널 접기" });
-    const logToggle = screen.getByRole("button", { name: "경기 기록 패널 접기" });
     const playersPanel = screen.getByRole("region", { name: "참가자" });
     expect(playersToggle).toHaveAttribute("aria-expanded", "true");
-    expect(logToggle).toHaveAttribute("aria-expanded", "true");
+    // 경기 기록 패널은 없앴으므로 접을 것도 없다.
+    expect(screen.queryByRole("button", { name: /경기 기록 패널/ })).not.toBeInTheDocument();
 
     await user.click(playersToggle);
     expect(playersToggle).toHaveAccessibleName("참가자 패널 펼치기");
     expect(playersToggle).toHaveAttribute("aria-expanded", "false");
     expect(playersPanel).not.toHaveAttribute("hidden");
     expect(playersPanel).toHaveClass("game-panel--collapsed");
-    expect(logToggle).toHaveAttribute("aria-expanded", "true");
   });
 
   it("returns from a finished game by leaving only the current room session", async () => {

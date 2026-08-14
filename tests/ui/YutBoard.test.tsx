@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PublicGameState, PublicRoomSnapshot } from "../../shared/protocol";
@@ -266,6 +266,123 @@ describe("YutBoard", () => {
       .toHaveClass("yut-piece--side-0");
     expect(screen.getByRole("button", { name: "B팀 말 1개 바깥 지점 10" }))
       .toHaveClass("yut-piece--side-1");
+  });
+
+  it("previews where a piece would land, and clears the preview when the pointer leaves", async () => {
+    const user = userEvent.setup();
+    render(
+      <YutBoard
+        game={createGame()}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-1", "A-3"]}
+        previewMoves={[
+          { pieceId: "A-1", destinationNodeId: "D1_2", path: ["D1_1", "D1_2"], finished: false },
+        ]}
+        onSelectPiece={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    expect(screen.queryByTestId("move-preview")).not.toBeInTheDocument();
+
+    await user.hover(screen.getByRole("button", { name: "A팀 말 2개 가운데 지점" }));
+
+    const preview = screen.getByTestId("move-preview");
+    // 밟고 지나갈 칸은 자국으로, 도착 칸은 따로 표시한다.
+    expect(preview.querySelectorAll("[data-preview-step]")).toHaveLength(1);
+    expect(preview.querySelector("[data-preview-step]")).toHaveAttribute("data-preview-step", "D1_1");
+    expect(preview.querySelector("[data-preview-goal]")).toHaveAttribute("data-preview-goal", "D1_2");
+    // 미리 보기는 눈으로 보는 도움이라 보조기기에는 노출하지 않는다.
+    expect(preview).toHaveAttribute("aria-hidden", "true");
+
+    await user.unhover(screen.getByRole("button", { name: "A팀 말 2개 가운데 지점" }));
+    expect(screen.queryByTestId("move-preview")).not.toBeInTheDocument();
+  });
+
+  it("previews on keyboard focus too, not only on hover", () => {
+    render(
+      <YutBoard
+        game={createGame()}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-1", "A-3"]}
+        previewMoves={[
+          { pieceId: "A-1", destinationNodeId: "D1_2", path: ["D1_1", "D1_2"], finished: false },
+        ]}
+        onSelectPiece={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    const piece = screen.getByRole("button", { name: "A팀 말 2개 가운데 지점" });
+    act(() => piece.focus());
+    expect(screen.getByTestId("move-preview")).toBeInTheDocument();
+
+    act(() => piece.blur());
+    expect(screen.queryByTestId("move-preview")).not.toBeInTheDocument();
+  });
+
+  it("marks a capture, and a finish at the start corner", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <YutBoard
+        game={createGame()}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-1"]}
+        previewMoves={[
+          // 도착 칸 O10에는 B팀 말이 서 있다. 잡기 여부는 클라이언트가 말 위치로 알아낸다.
+          { pieceId: "A-1", destinationNodeId: "O10", path: ["O10"], finished: false },
+        ]}
+        onSelectPiece={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    await user.hover(screen.getByRole("button", { name: "A팀 말 2개 가운데 지점" }));
+    expect(screen.getByTestId("move-preview")).toHaveTextContent("잡기");
+
+    rerender(
+      <YutBoard
+        game={createGame()}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-1"]}
+        previewMoves={[
+          { pieceId: "A-1", destinationNodeId: "FINISH", path: ["FINISH"], finished: true },
+        ]}
+        onSelectPiece={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    const preview = screen.getByTestId("move-preview");
+    expect(preview).toHaveTextContent("완주");
+    // 참에는 판 좌표가 없으므로 표시를 시작점 모서리에 놓는다.
+    expect(preview.querySelector("[data-preview-goal]")).toHaveAttribute("data-preview-goal", "O0");
+    expect(preview.querySelectorAll("[data-preview-step]")).toHaveLength(0);
+  });
+
+  it("shows nothing for a piece the current player cannot move", async () => {
+    const user = userEvent.setup();
+    render(
+      <YutBoard
+        game={createGame()}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-1"]}
+        previewMoves={[
+          { pieceId: "B-1", destinationNodeId: "O12", path: ["O11", "O12"], finished: false },
+        ]}
+        onSelectPiece={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    // 상대 말은 버튼이 잠겨 있어 미리 보기가 뜨지 않는다.
+    await user.hover(screen.getByRole("button", { name: "B팀 말 1개 바깥 지점 10" }));
+    expect(screen.queryByTestId("move-preview")).not.toBeInTheDocument();
   });
 
   it("exposes only server-provided legal routes as keyboard-operable buttons", async () => {

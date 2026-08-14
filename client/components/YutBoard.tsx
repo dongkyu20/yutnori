@@ -25,16 +25,51 @@ interface PieceGroup {
   teamId?: TeamId;
 }
 
+type PreviewMove = PublicGameState["pendingThrows"][number]["moves"][number];
+
 interface YutBoardProps {
   game: PublicGameState;
   players: PublicRoomSnapshot["players"];
   playerId: string | null;
   /** 지금 고른 윷 결과로 움직일 수 있는 말. */
   legalPieceIds: readonly string[];
+  /** 지금 고른 결과로 각 말이 갈 곳. 말에 마우스를 올리거나 초점을 주면 미리 보여 준다. */
+  previewMoves?: readonly PreviewMove[];
   onSelectPiece: (pieceId: string) => void;
   onSelectRoute: (routeId: string) => void;
   /** 지금 연출 중인 말. 이 말의 글자는 3D 말과 어긋나므로 감춘다. */
   animatingPieceIds?: readonly string[];
+}
+
+interface Preview {
+  /** 밟고 지나갈 칸. 도착 칸은 뺀다. */
+  trail: string[];
+  /** 도착 표시를 놓을 칸. 참으로 나면 좌표가 없으므로 시작점 모서리에 놓는다. */
+  markerNodeId: string;
+  badge: "잡기" | "완주" | null;
+}
+
+/**
+ * 미리 보기를 화면에 놓을 수 있는 모양으로 바꾼다.
+ * 잡을 수 있는지는 서버가 따로 보내 주지 않아도 된다. 도착 칸에 남의 말이 서 있는지 보면 안다.
+ */
+function previewOf(
+  move: PreviewMove,
+  controllerId: string,
+  pieces: readonly Piece[],
+): Preview {
+  const onBoard = (nodeId: string) => NODE_COORDINATES[nodeId] !== undefined;
+  const trail = move.path.filter((nodeId) => onBoard(nodeId) && nodeId !== move.destinationNodeId);
+  const captures = !move.finished && pieces.some((piece) =>
+    piece.status === "BOARD"
+    && piece.nodeId === move.destinationNodeId
+    && (piece.teamId ?? piece.ownerId) !== controllerId);
+
+  return {
+    trail,
+    markerNodeId: onBoard(move.destinationNodeId) ? move.destinationNodeId : START_NODE_ID,
+    badge: move.finished ? "완주" : captures ? "잡기" : null,
+  };
 }
 
 function nodeStyle(nodeId: string): CSSProperties {
@@ -140,6 +175,7 @@ export function YutBoard({
   players,
   playerId,
   legalPieceIds,
+  previewMoves = [],
   onSelectPiece,
   onSelectRoute,
   animatingPieceIds = [],
@@ -151,8 +187,15 @@ export function YutBoard({
   const slots = useMemo(() => sideSlots(game.pieces), [game.pieces]);
   const [stageActive, setStageActive] = useState(false);
   const [animating, setAnimating] = useState<readonly string[]>([]);
+  // 마우스를 올렸거나 초점을 받은 말. 마우스만으로는 키보드 사용자가 미리 보기를 못 쓴다.
+  const [previewPieceId, setPreviewPieceId] = useState<string | null>(null);
   // 밖에서 온 자리표시와 무대 스스로 알아낸 것을 합친다. 부모가 값을 안 줘도 무대는 늘 동작한다.
   const travelling = new Set([...animatingPieceIds, ...animating]);
+  const previewMove = previewMoves.find((move) => move.pieceId === previewPieceId);
+  const previewPiece = game.pieces.find((piece) => piece.id === previewPieceId);
+  const preview = previewMove && previewPiece
+    ? previewOf(previewMove, previewPiece.teamId ?? previewPiece.ownerId, game.pieces)
+    : null;
   const groups = groupPieces(game.pieces);
   const boardGroups = groups.filter((group) => group.status === "BOARD" && group.nodeId);
   const homeGroups = groups.filter((group) => group.status === "HOME");
@@ -180,6 +223,10 @@ export function YutBoard({
         data-controller-id={group.controllerId}
         disabled={!enabled}
         onClick={() => { if (enabled && legalPieceId) onSelectPiece(legalPieceId); }}
+        onPointerEnter={() => { if (enabled && legalPieceId) setPreviewPieceId(legalPieceId); }}
+        onPointerLeave={() => setPreviewPieceId(null)}
+        onFocus={() => { if (enabled && legalPieceId) setPreviewPieceId(legalPieceId); }}
+        onBlur={() => setPreviewPieceId(null)}
       >
         <span className="yut-piece__team">{group.teamId ?? controllerName(group, players)}</span>
         <span className="yut-piece__count"> ×{count}</span>
@@ -230,6 +277,25 @@ export function YutBoard({
             );
           })}
         </ol>
+        {preview && (
+          <div className="yut-preview" data-testid="move-preview" aria-hidden="true">
+            {preview.trail.map((nodeId) => (
+              <span
+                key={nodeId}
+                className="yut-preview__step"
+                data-preview-step={nodeId}
+                style={nodeStyle(nodeId)}
+              />
+            ))}
+            <span
+              className="yut-preview__goal"
+              data-preview-goal={preview.markerNodeId}
+              style={nodeStyle(preview.markerNodeId)}
+            >
+              {preview.badge && <span className="yut-preview__badge">{preview.badge}</span>}
+            </span>
+          </div>
+        )}
         <div className="yut-board__pieces">{boardGroups.map(renderPiece)}</div>
         {game.turnStage === "AWAITING_ROUTE" && game.legalRoutes.map((route) => (
           <button

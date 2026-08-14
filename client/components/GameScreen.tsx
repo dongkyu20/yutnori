@@ -5,7 +5,7 @@ import type { InRoomCommand, PublicRoomSnapshot } from "../../shared/protocol";
 import type { ConnectionState } from "../useGameSession";
 import { sideClass, sideName, sideSlotOf, sideSlots } from "../sideColor";
 import { EmojiReactions, type ReactionEvent } from "./EmojiReactions";
-import { EventLog } from "./EventLog";
+import { EventAnnouncer } from "./EventAnnouncer";
 import { ResultDialog } from "./ResultDialog";
 import { TurnPanel } from "./TurnPanel";
 import { YutBoard } from "./YutBoard";
@@ -36,7 +36,6 @@ export function GameScreen({
   leaveRoom = NOOP,
 }: GameScreenProps) {
   const [playersOpen, setPlayersOpen] = useState(true);
-  const [logOpen, setLogOpen] = useState(true);
   const [preferredThrowId, setPreferredThrowId] = useState<string | null>(null);
   const game = snapshot.game;
   if (!game) return <main><p role="alert">게임 정보를 불러오지 못했습니다.</p></main>;
@@ -116,12 +115,13 @@ export function GameScreen({
           </section>
         </aside>
 
-        <section className="game-screen__board-column" aria-label="경기판과 차례 조작">
+        <section className="game-screen__board-column" aria-label="경기판">
           <YutBoard
             game={game}
             players={snapshot.players}
             playerId={playerId}
             legalPieceIds={activeThrow?.legalPieceIds ?? []}
+            previewMoves={activeThrow?.moves ?? []}
             onSelectPiece={(pieceId) => {
               if (activeThrow) {
                 sendCommand({ type: "SELECT_PIECE", throwId: activeThrow.id, pieceId, ...metadata() });
@@ -129,6 +129,9 @@ export function GameScreen({
             }}
             onSelectRoute={(routeId) => sendCommand({ type: "SELECT_ROUTE", routeId, ...metadata() })}
           />
+        </section>
+
+        <section className="game-screen__turn-column" aria-label="차례 조작">
           <TurnPanel
             game={game}
             currentPlayerNickname={currentPlayer?.nickname ?? game.currentPlayerId}
@@ -143,25 +146,9 @@ export function GameScreen({
             onReact={(emoji) => sendCommand({ type: "REACT", emoji })}
           />
         </section>
-
-        <aside className="game-screen__log">
-          <button
-            className="panel-toggle"
-            type="button"
-            aria-controls="game-event-panel"
-            aria-expanded={logOpen}
-            onClick={() => setLogOpen((open) => !open)}
-          >
-            경기 기록 패널 {logOpen ? "접기" : "펼치기"}
-          </button>
-          <div
-            id="game-event-panel"
-            className={logOpen ? "game-panel" : "game-panel game-panel--collapsed"}
-          >
-            <EventLog events={game.events} />
-          </div>
-        </aside>
       </div>
+
+      <EventAnnouncer events={game.events} />
 
       {winnerName && (
         <ResultDialog
