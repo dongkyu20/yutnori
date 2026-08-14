@@ -101,6 +101,18 @@ function boardGroups(pieces: readonly Piece[], slots: ReadonlyMap<string, number
   );
 }
 
+/**
+ * 도착 칸에 잠깐 되살린 유령 덩이를 치운다. 정상 종료(`finish`)와 중간에 끊긴 연출의
+ * 정리(effect cleanup)가 이 하나만 부르게 해, 치우는 코드가 두 곳에서 따로 늙지 않게 한다.
+ */
+function disposeGhosts(stage: Stage): void {
+  stage.ghosts.forEach((ghost) => {
+    stage.board.pieceLayer.remove(ghost.mesh);
+    ghost.disposables.forEach((item) => { item.dispose(); });
+  });
+  stage.ghosts = [];
+}
+
 export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: BoardStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<Stage | null>(null);
@@ -286,11 +298,7 @@ export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: B
       // 권위 있는 자리로 되돌리고, 잠깐 살렸던 말을 치운다.
       if (walker) placePieceAt(walker.mesh, nodeWorldPosition(walker.nodeId));
       if (ring) ring.visible = false;
-      stage.ghosts.forEach((ghost) => {
-        stage.board.pieceLayer.remove(ghost.mesh);
-        ghost.disposables.forEach((item) => { item.dispose(); });
-      });
-      stage.ghosts = [];
+      disposeGhosts(stage);
       if (!stage.lost) stage.renderer.render(stage.board.scene, stage.board.camera);
       animatingRef.current([]);
     };
@@ -344,11 +352,13 @@ export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: B
     // 끊긴 연출의 글자 숨김이 다음 렌더까지 남지 않게 한다.
     return () => {
       cancelAnimationFrame(frameRef.current);
-      stage.ghosts.forEach((ghost) => {
-        stage.board.pieceLayer.remove(ghost.mesh);
-        ghost.disposables.forEach((item) => { item.dispose(); });
-      });
-      stage.ghosts = [];
+      // 진짜 언마운트라면 무대를 세우는 효과의 정리가 먼저 돌아 stones/ghosts를 이미
+      // 한 번 dispose하고 stageRef.current를 null로 비운다(두 효과 모두 여기서
+      // 닫히는 클린업 목록에 걸려 있고, React는 훅을 선언한 순서대로 정리를 부른다).
+      // 그 시점엔 이 효과가 붙잡은 `stage`가 이미 정리된 뒤이므로, 살아 있는 참조인
+      // stageRef로 다시 확인해 두 번 dispose하지 않게 막는다.
+      if (!stageRef.current) return;
+      disposeGhosts(stage);
       if (ring) ring.visible = false;
       animatingRef.current([]);
     };
