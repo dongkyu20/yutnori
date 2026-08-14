@@ -34,9 +34,21 @@ class LeavePendingSocket {
   readonly commands: unknown[] = [];
   private readonly acknowledgements: Array<() => void> = [];
   private readonly handlers = new Map<string, Array<(payload: unknown) => void>>();
+  private readonly managerHandlers = new Map<string, Array<(payload: unknown) => void>>();
   readonly io = {
-    on: () => this.io,
-    off: () => this.io,
+    on: (event: string, handler: (payload: unknown) => void) => {
+      const handlers = this.managerHandlers.get(event) ?? [];
+      handlers.push(handler);
+      this.managerHandlers.set(event, handlers);
+      return this.io;
+    },
+    off: (event: string, handler: (payload: unknown) => void) => {
+      this.managerHandlers.set(
+        event,
+        (this.managerHandlers.get(event) ?? []).filter((current) => current !== handler),
+      );
+      return this.io;
+    },
   };
 
   on(event: string, handler: (payload: unknown) => void): this {
@@ -80,6 +92,10 @@ class LeavePendingSocket {
 
   serverEmit(event: string, payload: unknown): void {
     for (const handler of this.handlers.get(event) ?? []) handler(payload);
+  }
+
+  managerEmit(event: string, payload: unknown): void {
+    for (const handler of this.managerHandlers.get(event) ?? []) handler(payload);
   }
 }
 
@@ -298,7 +314,10 @@ describe("useGameSession terminal reconnect errors", () => {
     expect(result.current.connectionState).toBe("reconnecting");
     expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBe(reconnectToken);
 
-    act(() => { socket.connect(); });
+    act(() => {
+      socket.managerEmit("reconnect", undefined);
+      socket.connect();
+    });
     expect(socket.commands).toEqual([firstCommand, firstCommand]);
 
     act(() => socket.serverDisconnect("io server disconnect"));

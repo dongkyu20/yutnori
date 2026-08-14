@@ -187,7 +187,6 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
     };
     const markOffline = () => setConnectionState("offline");
     socket.io.on("reconnect_attempt", markReconnecting);
-    socket.io.on("reconnect", markConnected);
     socket.io.on("reconnect_failed", markOffline);
 
     socket.on("connect", markConnected);
@@ -266,7 +265,6 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
       for (const timer of reactionTimers.values()) window.clearTimeout(timer);
       reactionTimers.clear();
       socket.io.off("reconnect_attempt", markReconnecting);
-      socket.io.off("reconnect", markConnected);
       socket.io.off("reconnect_failed", markOffline);
       socket.disconnect();
       socketRef.current = null;
