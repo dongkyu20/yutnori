@@ -1045,4 +1045,38 @@ describe("RoomService 방 나가기", () => {
       service.joinRoom({ roomCode: created.snapshot.roomCode, nickname: "Newcomer" }),
     ).code).toBe("ROOM_NOT_FOUND");
   });
+
+  it("빈 대기실에 새로 들어온 첫 사람을 방장으로 삼아 게임을 시작할 수 있게 한다", () => {
+    const service = new RoomService(new FakeClock().options());
+    const created = service.createRoom({ nickname: "OldHost", mode: "individual" });
+    dispatch(service, created.playerId, created.snapshot, { type: "LEAVE_ROOM" });
+
+    const newHost = service.joinRoom({ roomCode: created.snapshot.roomCode, nickname: "NewHost" });
+    expect(newHost.snapshot.hostPlayerId).toBe(newHost.playerId);
+    const guest = service.joinRoom({ roomCode: created.snapshot.roomCode, nickname: "Guest" });
+    let snapshot = dispatch(service, newHost.playerId, guest.snapshot, { type: "SET_READY", ready: true });
+    snapshot = dispatch(service, guest.playerId, snapshot, { type: "SET_READY", ready: true });
+    snapshot = dispatch(service, newHost.playerId, snapshot, { type: "START_GAME" });
+
+    expect(snapshot.phase).toBe("playing");
+  });
+
+  it("경기가 끝난 뒤 승자가 나가도 남은 사람에게 승자 이름을 보존한다", () => {
+    const service = new RoomService(new FakeClock().options(sequenceRandom(29)));
+    const sessions = createPlayers(service, "individual", ["Host", "Guest"]);
+    let snapshot = sessions.at(-1)!.snapshot;
+    for (const session of sessions) {
+      snapshot = dispatch(service, session.playerId, snapshot, { type: "SET_READY", ready: true });
+    }
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "START_GAME" });
+    const finished = playToFinish(service, snapshot);
+    const winner = sessions.find((session) => session.playerId === finished.game?.winnerId)!;
+    const winnerNickname = finished.players.find((player) => player.id === winner.playerId)!.nickname;
+
+    const afterLeave = dispatch(service, winner.playerId, finished, { type: "LEAVE_ROOM" });
+
+    expect(afterLeave.players.some((player) => player.id === winner.playerId)).toBe(false);
+    expect((afterLeave.game as typeof afterLeave.game & { winnerName?: string })?.winnerName)
+      .toBe(winnerNickname);
+  });
 });

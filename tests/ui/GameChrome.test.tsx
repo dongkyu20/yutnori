@@ -168,6 +168,34 @@ describe("finished game chrome", () => {
     });
   });
 
+  it("keeps showing the saved winner name after the winner leaves the finished room", () => {
+    const finished = gameSnapshot();
+    const snapshot: PublicRoomSnapshot = {
+      ...finished,
+      phase: "finished",
+      players: finished.players.filter((player) => player.id !== "player-1"),
+      game: {
+        ...finished.game!,
+        turnStage: "COMPLETE",
+        winnerId: "player-1",
+        winnerName: "민수",
+      },
+    };
+
+    render(
+      <GameScreen
+        snapshot={snapshot}
+        playerId="player-2"
+        sendCommand={() => undefined}
+        leaveRoom={() => undefined}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "경기 결과" });
+    expect(dialog).toHaveTextContent("민수 승리!");
+    expect(dialog).not.toHaveTextContent("player-1");
+  });
+
   it("moves focus to the real lobby after the result action replaces the game screen", async () => {
     const user = userEvent.setup();
     const lobbySession: LobbySessionApi = {

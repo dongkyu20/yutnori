@@ -30,6 +30,7 @@ class LeavePendingSocket {
   auth: Record<string, unknown> = {};
   connected = false;
   connectCalls = 0;
+  disconnectCalls = 0;
   readonly commands: unknown[] = [];
   private readonly handlers = new Map<string, Array<(payload: unknown) => void>>();
   readonly io = {
@@ -57,10 +58,16 @@ class LeavePendingSocket {
   }
 
   disconnect(): this {
+    this.disconnectCalls += 1;
     if (!this.connected) return this;
     this.connected = false;
     this.serverEmit("disconnect", "io client disconnect");
     return this;
+  }
+
+  serverDisconnect(reason: string): void {
+    this.connected = false;
+    this.serverEmit("disconnect", reason);
   }
 
   serverEmit(event: string, payload: unknown): void {
@@ -242,6 +249,121 @@ describe("useGameSession terminal reconnect errors", () => {
     act(() => vi.advanceTimersByTime(1_500));
 
     expect(socket.connectCalls).toBe(initialConnectCalls);
+  });
+
+  it("ignores a second leave request while the first one is pending", () => {
+    vi.useFakeTimers();
+    const roomService = new RoomService();
+    const issuedSession = roomService.createRoom({ nickname: "Host", mode: "individual" });
+    const socket = new LeavePendingSocket();
+    const socketFactory = () => socket as unknown as GameSocket;
+    const { result, unmount } = renderHook(() => useGameSession({ socketFactory }));
+    act(() => socket.serverEmit("snapshot", issuedSession.snapshot));
+
+    act(() => {
+      result.current.leaveRoom();
+      result.current.leaveRoom();
+    });
+
+    expect(socket.commands).toHaveLength(1);
+    expect(socket.disconnectCalls).toBe(0);
+    expect(socket.connected).toBe(true);
+    unmount();
+  });
+
+  it("keeps the reconnect token and retries the same leave request after a transient disconnect", () => {
+    vi.useFakeTimers();
+    const reconnectToken = "resume-token";
+    window.localStorage.setItem(RECONNECT_TOKEN_KEY, reconnectToken);
+    const roomService = new RoomService();
+    const issuedSession = roomService.createRoom({ nickname: "Host", mode: "individual" });
+    const socket = new LeavePendingSocket();
+    const socketFactory = () => socket as unknown as GameSocket;
+    const { result, unmount } = renderHook(() => useGameSession({ socketFactory }));
+    act(() => socket.serverEmit("snapshot", issuedSession.snapshot));
+
+    act(() => result.current.leaveRoom());
+    const firstCommand = socket.commands[0];
+    expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBe(reconnectToken);
+
+    act(() => socket.serverDisconnect("transport close"));
+    expect(result.current.connectionState).toBe("reconnecting");
+    expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBe(reconnectToken);
+
+    act(() => { socket.connect(); });
+    expect(socket.commands).toEqual([firstCommand, firstCommand]);
+
+    act(() => socket.serverDisconnect("io server disconnect"));
+    expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBeNull();
+    expect(result.current.snapshot).toBeNull();
+    expect(socket.auth).toEqual({});
+    unmount();
+  });
+
+  it("restores the room and token when the server does not confirm leave in time", () => {
+    vi.useFakeTimers();
+    const reconnectToken = "resume-token";
+    window.localStorage.setItem(RECONNECT_TOKEN_KEY, reconnectToken);
+    const roomService = new RoomService();
+    const issuedSession = roomService.createRoom({ nickname: "Host", mode: "individual" });
+    const socket = new LeavePendingSocket();
+    const socketFactory = () => socket as unknown as GameSocket;
+    const { result, unmount } = renderHook(() => useGameSession({ socketFactory }));
+    act(() => socket.serverEmit("snapshot", issuedSession.snapshot));
+
+    act(() => result.current.leaveRoom());
+    expect(result.current.snapshot).toBeNull();
+    act(() => vi.advanceTimersByTime(1_500));
+
+    expect(result.current.snapshot?.roomCode).toBe(issuedSession.snapshot.roomCode);
+    expect(result.current.error?.code).toBe("LEAVE_TIMEOUT");
+    expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBe(reconnectToken);
+    expect(socket.disconnectCalls).toBe(0);
+    unmount();
+  });
+
+  it("restores the room and token when the server rejects leave", () => {
+    vi.useFakeTimers();
+    const reconnectToken = "resume-token";
+    window.localStorage.setItem(RECONNECT_TOKEN_KEY, reconnectToken);
+    const roomService = new RoomService();
+    const issuedSession = roomService.createRoom({ nickname: "Host", mode: "individual" });
+    const socket = new LeavePendingSocket();
+    const socketFactory = () => socket as unknown as GameSocket;
+    const { result, unmount } = renderHook(() => useGameSession({ socketFactory }));
+    act(() => socket.serverEmit("snapshot", issuedSession.snapshot));
+
+    act(() => result.current.leaveRoom());
+    act(() => socket.serverEmit("server_error", {
+      code: "INTERNAL_ERROR",
+      message: "방 나가기를 처리하지 못했습니다.",
+      recoverable: false,
+    } satisfies ServerError));
+
+    expect(result.current.snapshot?.roomCode).toBe(issuedSession.snapshot.roomCode);
+    expect(result.current.error?.code).toBe("INTERNAL_ERROR");
+    expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBe(reconnectToken);
+    expect(socket.disconnectCalls).toBe(0);
+    unmount();
+  });
+
+  it("keeps the reserved seat when leave is requested while offline", () => {
+    const reconnectToken = "resume-token";
+    window.localStorage.setItem(RECONNECT_TOKEN_KEY, reconnectToken);
+    const roomService = new RoomService();
+    const issuedSession = roomService.createRoom({ nickname: "Host", mode: "individual" });
+    const socket = new LeavePendingSocket();
+    const socketFactory = () => socket as unknown as GameSocket;
+    const { result, unmount } = renderHook(() => useGameSession({ socketFactory }));
+    act(() => socket.serverEmit("snapshot", issuedSession.snapshot));
+    act(() => socket.serverDisconnect("transport close"));
+
+    act(() => result.current.leaveRoom());
+
+    expect(result.current.snapshot?.roomCode).toBe(issuedSession.snapshot.roomCode);
+    expect(result.current.error?.code).toBe("OFFLINE");
+    expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBe(reconnectToken);
+    unmount();
   });
 
   it("reports reconnecting through a transport retry, connected after recovery, and offline after retries fail", async () => {

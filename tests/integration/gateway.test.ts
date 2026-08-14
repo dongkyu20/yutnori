@@ -605,6 +605,30 @@ describe("Socket.IO gateway", () => {
     await disconnectedEvent;
   });
 
+  it("counts unauthenticated leave attempts against the general command quota", async () => {
+    const url = await startRateLimitedServer({
+      now: () => 0,
+      maxCommands: 1,
+      maxReactions: 4,
+    });
+    const socket = await openSocket(url);
+    const firstError = event<ServerError>(socket, "server_error");
+    socket.emit("command", {
+      type: "LEAVE_ROOM",
+      roomVersion: 0,
+      requestId: requestId(11),
+    });
+    expect((await firstError).code).toBe("SESSION_REQUIRED");
+
+    const limitedError = event<ServerError>(socket, "server_error");
+    socket.emit("command", {
+      type: "LEAVE_ROOM",
+      roomVersion: 0,
+      requestId: requestId(12),
+    });
+    expect((await limitedError).code).toBe("RATE_LIMITED");
+  });
+
   it("counts invalid raw commands against the general per-socket quota", async () => {
     const url = await startRateLimitedServer({
       now: () => 0,

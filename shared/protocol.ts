@@ -53,6 +53,8 @@ export interface PublicGameState {
     capturedPieceIds: string[];
   } | null;
   winnerId: string | null;
+  /** 종료 시점의 승자 표시 이름. 승자가 먼저 나가도 결과 문구를 안정적으로 유지한다. */
+  winnerName?: string | null;
   events: Array<{ id: string; message: string; createdAt: number }>;
 }
 export interface PublicRoomSnapshot {

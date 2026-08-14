@@ -66,6 +66,7 @@ interface Room {
   actionTimerId: unknown | null;
   emptySince: number | null;
   finishedAt: number | null;
+  winnerName: string | null;
 }
 
 interface SessionLocation {
@@ -181,6 +182,7 @@ export class RoomService {
       actionTimerId: null,
       emptySince: null,
       finishedAt: null,
+      winnerName: null,
     };
 
     this.rooms.set(roomCode, room);
@@ -214,7 +216,9 @@ export class RoomService {
     }
 
     const session = this.createPlayer(nickname);
+    const joiningEmptyRoom = room.players.length === 0;
     room.players.push(session.player);
+    if (joiningEmptyRoom) room.hostPlayerId = session.player.id;
     room.version += 1;
     room.emptySince = null;
     this.playerRooms.set(session.player.id, roomCode);
@@ -495,6 +499,7 @@ export class RoomService {
       })),
     });
     room.phase = "playing";
+    room.winnerName = null;
     this.scheduleAction(room, this.options.actionTimeoutMs);
   }
 
@@ -508,6 +513,7 @@ export class RoomService {
     room.game = null;
     room.finishedAt = null;
     room.actionExpiresAt = null;
+    room.winnerName = null;
     for (const player of room.players) {
       player.ready = player.id === actor.id;
     }
@@ -518,6 +524,12 @@ export class RoomService {
   }
 
   private finishRoom(room: Room): void {
+    const winnerId = room.game?.winnerId ?? null;
+    room.winnerName = winnerId === null
+      ? null
+      : room.mode === "team"
+        ? `${winnerId}팀`
+        : room.players.find((player) => player.id === winnerId)?.nickname ?? null;
     room.phase = "finished";
     room.finishedAt = this.options.now();
     room.actionExpiresAt = null;
@@ -732,7 +744,10 @@ export class RoomService {
         };
       }),
       game: room.game
-        ? toPublicGameState(room.game, room.phase === "playing" ? room.actionExpiresAt : null)
+        ? {
+            ...toPublicGameState(room.game, room.phase === "playing" ? room.actionExpiresAt : null),
+            winnerName: room.winnerName,
+          }
         : null,
     };
   }

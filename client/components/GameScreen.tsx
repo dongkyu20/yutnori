@@ -50,9 +50,10 @@ export function GameScreen({
   const metadata = () => ({ roomVersion: snapshot.version, requestId: newRequestId() });
   const winnerName = game.winnerId === null
     ? null
-    : snapshot.mode === "team"
-      ? `${game.winnerId}팀`
-      : snapshot.players.find((player) => player.id === game.winnerId)?.nickname ?? game.winnerId;
+    : game.winnerName
+      ?? (snapshot.mode === "team"
+        ? `${game.winnerId}팀`
+        : snapshot.players.find((player) => player.id === game.winnerId)?.nickname ?? game.winnerId);
 
   // 진행 중인 판을 두고 나가면 내 말이 걷힌다. 되돌릴 수 없으므로 한 번 묻는다.
   const confirmLeave = (): void => {

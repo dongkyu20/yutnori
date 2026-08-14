@@ -226,7 +226,9 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
     socket.on("command", (raw: unknown) => {
       const now = rateLimit.now();
       const result = parseClientCommand(raw);
-      const bypassCommandQuota = result.success && result.data.type === "LEAVE_ROOM";
+      const bypassCommandQuota = result.success
+        && result.data.type === "LEAVE_ROOM"
+        && socket.data.playerId !== undefined;
       if (
         !bypassCommandQuota &&
         !consumeQuota(commandQuota, now, rateLimit.windowMs, rateLimit.maxCommands)
