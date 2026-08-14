@@ -11,6 +11,7 @@ import {
   applyGameCommand,
   createGame,
   GameActionError,
+  removePlayer,
   toPublicGameState,
 } from "./game/reducer";
 import type { GameState } from "./game/types";
@@ -262,7 +263,9 @@ export class RoomService {
     if (player.processedRequestIds.has(command.requestId)) {
       return this.snapshot(room);
     }
-    if (command.roomVersion !== room.version) {
+    // 나가기는 방 상태와 무관하게 늘 받아 준다. 오래된 버전이라고 되돌리면
+    // 화면은 이미 로비로 나갔는데 자리만 남는다.
+    if (command.type !== "LEAVE_ROOM" && command.roomVersion !== room.version) {
       throw new RoomError("STALE_VERSION", "오래된 방 버전입니다.");
     }
 
@@ -329,6 +332,10 @@ export class RoomService {
         this.assignTeam(room, command.playerId, command.teamId);
         // 옮기고 나서 빈 팀이 생겼으면 그 팀이 쥐고 있던 색을 놓아준다.
         this.releaseOrphanedColors(room);
+        return;
+      case "LEAVE_ROOM":
+        // 어느 단계에서든 나갈 수 있다. 진행 중이면 판에서도 빠진다.
+        this.leaveRoom(room, actor);
         return;
       case "KICK_PLAYER":
         this.assertWaiting(room);
@@ -424,10 +431,55 @@ export class RoomService {
     if (index < 0) {
       throw new RoomError("PLAYER_NOT_FOUND", "참가자를 찾을 수 없습니다.");
     }
+    this.dropMember(room, index);
+  }
+
+  /** 방에서 자리를 지운다. 다시 들어올 표도 함께 버려 그 표로는 돌아올 수 없게 한다. */
+  private dropMember(room: Room, index: number): RoomPlayer {
     const [removed] = room.players.splice(index, 1);
     this.sessions.delete(removed.reconnectTokenHash);
     this.playerRooms.delete(removed.id);
     this.releaseOrphanedColors(room);
+    return removed;
+  }
+
+  /**
+   * 스스로 방을 떠난다.
+   *
+   * 자리와 색을 놓고, 방장이었다면 남은 사람에게 넘긴다. 진행 중인 판이라면 그 사람의
+   * 말을 걷고 차례에서 빼서 남은 사람끼리 잇는다. 한 편만 남으면 그 편의 승리로 끝난다.
+   * 아무도 남지 않은 방은 빈 방으로 표시해 두면 정리 주기가 지울 것이다.
+   */
+  private leaveRoom(room: Room, actor: RoomPlayer): void {
+    const index = room.players.findIndex((candidate) => candidate.id === actor.id);
+    if (index < 0) throw new RoomError("PLAYER_NOT_FOUND", "참가자를 찾을 수 없습니다.");
+    this.dropMember(room, index);
+
+    if (room.hostPlayerId === actor.id) {
+      const nextHost = room.players.find((candidate) => candidate.connected) ?? room.players[0];
+      if (nextHost) room.hostPlayerId = nextHost.id;
+    }
+
+    if (room.phase === "playing" && room.game) {
+      const wasCurrentPlayer = room.game.currentPlayerId === actor.id;
+      room.game = removePlayer(room.game, actor.id, actor.nickname);
+      if (room.game.turnStage === "COMPLETE") {
+        this.finishRoom(room);
+      } else if (wasCurrentPlayer) {
+        // 떠난 사람 차례였으면 다음 사람에게 넘어갔다. 그 사람 시계로 다시 잰다.
+        const currentPlayer = this.connectedPlayer(room, room.game.currentPlayerId);
+        this.scheduleAction(room, currentPlayer ? this.options.actionTimeoutMs : 0);
+      }
+    }
+
+    if (!room.players.some((candidate) => candidate.connected)) {
+      room.emptySince = this.options.now();
+    }
+    if (room.players.length === 0 && room.actionTimerId !== null) {
+      this.options.cancel(room.actionTimerId);
+      room.actionTimerId = null;
+      room.actionExpiresAt = null;
+    }
   }
 
   private startGame(room: Room): void {

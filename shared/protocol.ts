@@ -10,6 +10,8 @@ export type ClientCommand =
   /** 내 말 색을 고른다. 팀전에서는 팀에 먼저 들어온 사람이 팀 색을 정한다. */
   | { type: "CHOOSE_COLOR"; slot: number; roomVersion: number; requestId: string }
   | { type: "KICK_PLAYER"; playerId: string; roomVersion: number; requestId: string }
+  /** 스스로 방을 떠난다. 진행 중인 판에서는 그 사람의 말도 함께 걷힌다. */
+  | { type: "LEAVE_ROOM"; roomVersion: number; requestId: string }
   | { type: "START_GAME"; roomVersion: number; requestId: string }
   /** 경기가 끝난 방을 같은 참가자와 팀 그대로 대기 상태로 되돌린다. */
   | { type: "PLAY_AGAIN"; roomVersion: number; requestId: string }

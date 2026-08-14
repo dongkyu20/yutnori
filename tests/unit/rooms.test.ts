@@ -919,3 +919,130 @@ describe("RoomService change subscriptions", () => {
     expect(changes.every((change) => change.roomCode === host.snapshot.roomCode)).toBe(true);
   });
 });
+
+describe("RoomService 방 나가기", () => {
+  it("대기실에서 나가면 자리와 색이 풀린다", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host, guest] = createPlayers(service, "individual", ["Host", "Guest"]);
+    let snapshot = dispatch(service, guest.playerId, guest.snapshot, { type: "CHOOSE_COLOR", slot: 2 });
+
+    snapshot = dispatch(service, guest.playerId, snapshot, { type: "LEAVE_ROOM" });
+
+    expect(snapshot.players.map((player) => player.id)).toEqual([host.playerId]);
+    // 놓고 간 색은 남은 사람이 고를 수 있어야 한다.
+    const afterColor = dispatch(service, host.playerId, snapshot, { type: "CHOOSE_COLOR", slot: 2 });
+    expect(afterColor.players[0].colorSlot).toBe(2);
+    // 그 표로는 돌아올 수 없다.
+    expect(roomError(() => service.reconnect(guest.reconnectToken)).code).toBe("SESSION_NOT_FOUND");
+  });
+
+  it("방장이 나가면 남은 사람이 방장을 잇는다", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host, guest] = createPlayers(service, "individual", ["Host", "Guest"]);
+
+    const snapshot = dispatch(service, host.playerId, guest.snapshot, { type: "LEAVE_ROOM" });
+
+    expect(snapshot.hostPlayerId).toBe(guest.playerId);
+    expect(snapshot.players).toHaveLength(1);
+  });
+
+  it("진행 중인 판에서 나가면 그 사람 말을 걷고 남은 사람끼리 잇는다", () => {
+    const service = new RoomService(new FakeClock().options());
+    const sessions = createPlayers(service, "individual", ["Host", "Guest", "Third"]);
+    let snapshot = sessions.at(-1)!.snapshot;
+    for (const session of sessions) {
+      snapshot = dispatch(service, session.playerId, snapshot, { type: "SET_READY", ready: true });
+    }
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "START_GAME" });
+    expect(snapshot.game?.pieces).toHaveLength(12);
+
+    snapshot = dispatch(service, sessions[1].playerId, snapshot, { type: "LEAVE_ROOM" });
+
+    expect(snapshot.phase).toBe("playing");
+    expect(snapshot.players).toHaveLength(2);
+    expect(snapshot.game?.pieces).toHaveLength(8);
+    expect(snapshot.game?.pieces.some((piece) => piece.ownerId === sessions[1].playerId)).toBe(false);
+    // 남은 두 사람은 그대로 이어서 둔다.
+    expect(snapshot.game?.currentPlayerId).toBe(sessions[0].playerId);
+    expect(snapshot.game?.turnStage).toBe("AWAITING_THROW");
+  });
+
+  it("판에 한 사람만 남으면 그 사람의 승리로 끝난다", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host, guest] = readyIndividualGame(service);
+
+    const snapshot = dispatch(service, guest.playerId, host.snapshot, { type: "LEAVE_ROOM" });
+
+    expect(snapshot.phase).toBe("finished");
+    expect(snapshot.game?.winnerId).toBe(host.playerId);
+    expect(snapshot.game?.turnStage).toBe("COMPLETE");
+  });
+
+  it("차례인 사람이 나가면 다음 사람에게 넘기고 시계를 다시 잰다", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options());
+    const sessions = createPlayers(service, "individual", ["Host", "Guest", "Third"]);
+    let snapshot = sessions.at(-1)!.snapshot;
+    for (const session of sessions) {
+      snapshot = dispatch(service, session.playerId, snapshot, { type: "SET_READY", ready: true });
+    }
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "START_GAME" });
+    expect(snapshot.game?.currentPlayerId).toBe(sessions[0].playerId);
+
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "LEAVE_ROOM" });
+
+    expect(snapshot.game?.currentPlayerId).toBe(sessions[1].playerId);
+    expect(clock.scheduledDelays.at(-1)).toBe(45_000);
+  });
+
+  it("다른 사람 차례에 나가면 현재 차례의 남은 시간을 늘리지 않는다", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options());
+    const sessions = createPlayers(service, "individual", ["Host", "Guest", "Third"]);
+    let snapshot = sessions.at(-1)!.snapshot;
+    for (const session of sessions) {
+      snapshot = dispatch(service, session.playerId, snapshot, { type: "SET_READY", ready: true });
+    }
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "START_GAME" });
+    expect(snapshot.game?.actionExpiresAt).toBe(45_000);
+
+    clock.advance(12_000);
+    snapshot = dispatch(service, sessions[2].playerId, snapshot, { type: "LEAVE_ROOM" });
+
+    expect(snapshot.game?.currentPlayerId).toBe(sessions[0].playerId);
+    expect(snapshot.game?.actionExpiresAt).toBe(45_000);
+    clock.advance(32_999);
+    expect(clock.executed).toBe(0);
+    clock.advance(1);
+    expect(clock.executed).toBe(1);
+  });
+
+  it("오래된 방 버전으로 나가겠다고 해도 받아 준다", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host, guest] = createPlayers(service, "individual", ["Host", "Guest"]);
+    // 나가려는 사이에 방이 앞으로 나아간 경우. 화면은 이미 로비로 나갔으니 자리를 남길 수 없다.
+    dispatch(service, host.playerId, guest.snapshot, { type: "SET_READY", ready: true });
+
+    const snapshot = service.dispatch(guest.playerId, {
+      type: "LEAVE_ROOM",
+      roomVersion: 0,
+      requestId: requestId(),
+    });
+
+    expect(snapshot.players.map((player) => player.id)).toEqual([host.playerId]);
+  });
+
+  it("마지막 사람까지 나간 방은 빈 방으로 두어 정리되게 한다", () => {
+    const clock = new FakeClock();
+    const service = new RoomService(clock.options());
+    const created = service.createRoom({ nickname: "Host", mode: "individual" });
+
+    dispatch(service, created.playerId, created.snapshot, { type: "LEAVE_ROOM" });
+    clock.advance(10 * 60_000);
+    service.removeExpiredRooms();
+
+    expect(roomError(() =>
+      service.joinRoom({ roomCode: created.snapshot.roomCode, nickname: "Newcomer" }),
+    ).code).toBe("ROOM_NOT_FOUND");
+  });
+});

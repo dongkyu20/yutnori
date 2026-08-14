@@ -95,6 +95,72 @@ export function createGame(input: CreateGameInput): GameState {
   };
 }
 
+/** 판을 쥐고 있는 편. 개인전은 참가자 자신, 팀전은 팀이다. */
+function controllerOf(mode: GameMode, player: GamePlayer): string {
+  return (mode === "team" ? player.teamId : player.id) ?? player.id;
+}
+
+/**
+ * 판을 떠난 사람을 게임에서 지운다.
+ *
+ * 개인전이면 그 사람 말을 걷는다. 팀전이면 팀에 남은 사람이 있는지 보고, 팀이
+ * 통째로 비었을 때만 그 팀 말을 걷는다. 남은 편이 하나뿐이면 그 편의 승리로 끝낸다.
+ * 떠난 사람 차례였으면 다음 사람에게 넘기고 그 차례에 들고 있던 것은 버린다.
+ */
+export function removePlayer(state: GameState, playerId: string, nickname: string): GameState {
+  const leaving = state.players.find((player) => player.id === playerId);
+  if (!leaving) return state;
+
+  const players = state.players.filter((player) => player.id !== playerId);
+  const leavingController = controllerOf(state.mode, leaving);
+  const remainingControllers = new Set(players.map((player) => controllerOf(state.mode, player)));
+  const pieces = remainingControllers.has(leavingController)
+    ? state.pieces
+    : state.pieces.filter((piece) => (piece.teamId ?? piece.ownerId) !== leavingController);
+
+  const turnOrder = state.turnOrder.filter((id) => id !== playerId);
+  const wasTheirTurn = state.currentPlayerId === playerId;
+  // 떠난 자리에서 순서를 잇는다. 앞으로 돌아가면 이미 둔 사람이 또 두게 된다.
+  const nextIndex = state.turnOrder.indexOf(playerId);
+  const currentPlayerId = wasTheirTurn
+    ? state.turnOrder.slice(nextIndex + 1).concat(state.turnOrder.slice(0, nextIndex))
+      .find((id) => turnOrder.includes(id)) ?? ""
+    : state.currentPlayerId;
+
+  const left = withEvent(
+    { ...state, players, pieces, turnOrder, currentPlayerId },
+    `${nickname}님이 방을 떠났습니다.`,
+  );
+
+  if (remainingControllers.size <= 1) {
+    const winnerId = remainingControllers.size === 1 ? [...remainingControllers][0] : null;
+    const ended: GameState = {
+      ...clearedTurnSelection(left),
+      turnStage: "COMPLETE",
+      pendingThrows: [],
+      throwsRemaining: 0,
+      lastThrow: null,
+      lastThrowEventId: null,
+      lastMove: null,
+      winnerId,
+    };
+    return winnerId === null ? ended : withEvent(ended, `${winnerId}님이 이겼습니다.`);
+  }
+
+  if (!wasTheirTurn) return left;
+
+  return {
+    ...clearedTurnSelection(left),
+    turnStage: "AWAITING_THROW",
+    pendingThrows: [],
+    throwsRemaining: THROWS_PER_TURN,
+    // 떠난 사람의 던지기와 이동은 더 이상 연출할 것이 없다.
+    lastThrow: null,
+    lastThrowEventId: null,
+    lastMove: null,
+  };
+}
+
 function currentController(state: GameState): PieceController {
   const player = state.players.find((candidate) => candidate.id === state.currentPlayerId);
   if (!player) {
@@ -299,7 +365,9 @@ function resolveMove(
 
 function applyThrow(state: GameState, command: Extract<GameCommand, { type: "THROW" }>): GameState {
   requireStage(state, "AWAITING_THROW");
-  const throwEventId = `event-${state.events.length + 1}`;
+  // 곧 withEvent가 붙일 기록의 id와 같은 값이어야 한다. 배열 길이에서 뽑으면
+  // 기록을 잘라낸 뒤 같은 id가 다시 나오고, 연출이 "이미 본 던지기"로 여겨 건너뛴다.
+  const throwEventId = `event-${state.eventSequence + 1}`;
   const outcome: ThrowOutcome = {
     ...command.outcome,
     sticks: [...command.outcome.sticks] as ThrowOutcome["sticks"],

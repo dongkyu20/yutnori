@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { applyGameCommand, createGame, endTurn, toPublicGameState, MAX_EVENTS } from "../../server/game/reducer";
+import {
+  applyGameCommand,
+  createGame,
+  endTurn,
+  removePlayer,
+  toPublicGameState,
+  MAX_EVENTS,
+} from "../../server/game/reducer";
 import type { GameState, ThrowOutcome } from "../../server/game/types";
 
 const outcome = (
@@ -431,15 +438,113 @@ describe("game reducer", () => {
     expect(next.turnStage).toBe("COMPLETE");
   });
 
+  describe("떠난 사람 지우기", () => {
+    const threeWayGame = () =>
+      createGame({ mode: "individual", players: [{ id: "A1" }, { id: "B1" }, { id: "C1" }] });
+
+    it("개인전에서는 그 사람 말을 걷고 차례에서 뺀다", () => {
+      let state = placePiece(threeWayGame(), "B1-1", { nodeId: "O5", routeId: "OUTER" });
+      state = removePlayer(state, "B1", "지수");
+
+      expect(state.players.map((player) => player.id)).toEqual(["A1", "C1"]);
+      expect(state.turnOrder).toEqual(["A1", "C1"]);
+      expect(state.pieces.some((piece) => piece.ownerId === "B1")).toBe(false);
+      expect(state.pieces).toHaveLength(8);
+      expect(state.winnerId).toBeNull();
+      expect(state.events.at(-1)?.message).toContain("지수");
+    });
+
+    it("떠난 사람 차례였으면 다음 사람에게 넘긴다", () => {
+      let state = threeWayGame();
+      state = throwYut(state, "A1", "DO", 1);
+      expect(state.currentPlayerId).toBe("A1");
+
+      state = removePlayer(state, "A1", "민수");
+
+      expect(state.currentPlayerId).toBe("B1");
+      expect(state.turnStage).toBe("AWAITING_THROW");
+      expect(state.pendingThrows).toEqual([]);
+      expect(state.throwsRemaining).toBe(1);
+      expect(state.lastThrow).toBeNull();
+    });
+
+    it("다른 사람 차례에 떠나면 그 사람이 든 결과는 건드리지 않는다", () => {
+      let state = threeWayGame();
+      state = throwYut(state, "A1", "DO", 1);
+      const held = state.pendingThrows.map((pending) => pending.result);
+
+      state = removePlayer(state, "C1", "영희");
+
+      expect(state.currentPlayerId).toBe("A1");
+      expect(state.pendingThrows.map((pending) => pending.result)).toEqual(held);
+      expect(state.turnStage).toBe("AWAITING_PIECE");
+    });
+
+    it("혼자 남으면 그 사람의 승리로 판을 끝낸다", () => {
+      const state = removePlayer(individualGame(), "B1", "지수");
+
+      expect(state.winnerId).toBe("A1");
+      expect(state.turnStage).toBe("COMPLETE");
+      expect(state.events.at(-1)?.message).toContain("이겼습니다");
+    });
+
+    it("팀전에서 한 사람만 떠나면 팀 말은 그대로 두고 남은 팀원이 잇는다", () => {
+      const teamState = createGame({
+        mode: "team",
+        players: [{ id: "A1", teamId: "A" }, { id: "A2", teamId: "A" }, { id: "B1", teamId: "B" }, { id: "B2", teamId: "B" }],
+      });
+
+      const state = removePlayer(teamState, "A1", "민수");
+
+      expect(state.turnOrder).toEqual(["B1", "A2", "B2"]);
+      expect(state.currentPlayerId).toBe("B1");
+      expect(state.pieces.filter((piece) => piece.teamId === "A")).toHaveLength(4);
+      expect(state.winnerId).toBeNull();
+    });
+
+    it("팀이 통째로 비면 그 팀 말을 걷는다", () => {
+      const teamState = createGame({
+        mode: "team",
+        players: [{ id: "A1", teamId: "A" }, { id: "B1", teamId: "B" }, { id: "B2", teamId: "B" }],
+      });
+
+      const state = removePlayer(teamState, "A1", "민수");
+
+      expect(state.pieces.some((piece) => piece.teamId === "A")).toBe(false);
+      // B팀만 남았으므로 판은 B팀의 승리로 끝난다.
+      expect(state.winnerId).toBe("B");
+      expect(state.turnStage).toBe("COMPLETE");
+    });
+
+    it("마지막 사람까지 떠나면 승자 없이 끝난다", () => {
+      let state = removePlayer(individualGame(), "B1", "지수");
+      state = removePlayer(state, "A1", "민수");
+
+      expect(state.players).toEqual([]);
+      expect(state.turnOrder).toEqual([]);
+      expect(state.winnerId).toBeNull();
+      expect(state.turnStage).toBe("COMPLETE");
+    });
+
+    it("없는 사람을 지우라고 하면 그대로 둔다", () => {
+      const state = individualGame();
+      expect(removePlayer(state, "없는사람", "누구")).toBe(state);
+    });
+  });
+
   it("keeps the log from growing without bound, and still gives every event its own id", () => {
     // 기록은 스냅숏마다 통째로 실려 나가므로 한 판 내내 쌓게 두면 안 된다.
     // 다만 id를 배열 길이에서 뽑고 있어, 잘라내면 예전 id가 다시 나온다.
     // 그러면 던지기·이동 연출이 "이미 본 것"으로 오인해 재생되지 않는다.
     let state = individualGame();
     const seen = new Set<string>();
+    // 던지기마다 달린 id. 이 값이 되풀이되면 윷 굴리는 연출이 "이미 본 던지기"로
+    // 여겨 건너뛴다. 기록을 잘라내도 이 값은 계속 자라야 한다.
+    const throwIds: string[] = [];
     for (let step = 0; step < 300; step += 1) {
       if (state.turnStage === "AWAITING_THROW") {
         state = throwYut(state, state.currentPlayerId, "DO", 1);
+        if (state.lastThrowEventId) throwIds.push(state.lastThrowEventId);
       } else if (state.turnStage === "AWAITING_PIECE") {
         state = movePiece(state, state.currentPlayerId, state.legalPieceIds[0]);
       } else {
@@ -447,6 +552,9 @@ describe("game reducer", () => {
       }
       state.events.forEach((event) => seen.add(event.id));
     }
+
+    expect(throwIds.length).toBeGreaterThan(MAX_EVENTS);
+    expect(new Set(throwIds).size).toBe(throwIds.length);
 
     expect(state.events.length).toBeLessThanOrEqual(MAX_EVENTS);
     // 남아 있는 기록끼리도, 지나간 것과도 id가 겹치지 않는다.
