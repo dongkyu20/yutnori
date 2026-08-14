@@ -285,6 +285,15 @@ button, input, select, textarea { min-height: 44px; }
 .yut-board > h2 { margin: 0; font-size: 1rem; color: var(--muted-ink); }
 /* 윷판이 화면을 다 먹어 차례 패널이 접히지 않도록 높이를 뷰포트로 묶는다. */
 .yut-board__track { position: relative; width: min(100%, 43rem, 54dvh); aspect-ratio: 1; margin: 0 auto; isolation: isolate; }
+
+/* 3D 무대가 서면 2D 칸과 말 그림만 감춘다. 버튼과 라벨은 조작·접근성 때문에 그대로 남는다. */
+.yut-board__canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.yut-board__track--3d .yut-board__segments { display: none; }
+.yut-board__track--3d .yut-board__node { border-color: transparent; background: transparent; box-shadow: none; }
+.yut-board__track--3d .yut-board__node::before,
+.yut-board__track--3d .yut-board__node::after { display: none; }
+.yut-board__track--3d .yut-piece { background: transparent; border-color: transparent; box-shadow: none; text-shadow: 0 1px 3px rgb(31 39 36 / 85%); }
+
 .yut-board__segments { position: absolute; inset: 0; z-index: -2; }
 .yut-board__segment { position: absolute; left: var(--segment-x); top: var(--segment-y); width: var(--segment-length); height: 4px; transform: translateY(-50%) rotate(var(--segment-angle)); transform-origin: left center; }
 .yut-board__segment::before { content: ""; position: absolute; inset: 0; background: linear-gradient(to right, var(--ink), #695B49); }

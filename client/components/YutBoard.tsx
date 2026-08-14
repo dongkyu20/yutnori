@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import type { PublicGameState, PublicRoomSnapshot, TeamId } from "../../shared/protocol";
 import { sideClass, sideSlotOf, sideSlots } from "../sideColor";
 import {
@@ -12,6 +12,7 @@ import {
   START_NODE_ID,
   type BoardSegment,
 } from "../boardLayout";
+import { BoardStage } from "./BoardStage";
 
 type Piece = PublicGameState["pieces"][number];
 
@@ -143,6 +144,7 @@ export function YutBoard({
   const isCurrentPlayer = playerId === game.currentPlayerId;
   const legalPieces = new Set(legalPieceIds);
   const slots = sideSlots(game.pieces);
+  const [stageActive, setStageActive] = useState(false);
   const groups = groupPieces(game.pieces);
   const boardGroups = groups.filter((group) => group.status === "BOARD" && group.nodeId);
   const homeGroups = groups.filter((group) => group.status === "HOME");
@@ -178,7 +180,17 @@ export function YutBoard({
   return (
     <section className="yut-board" aria-labelledby="yut-board-heading">
       <h2 id="yut-board-heading">윷판</h2>
-      <div className="yut-board__track" aria-label="윷판 경로, 반시계 방향으로 진행">
+      <div
+        className={`yut-board__track${stageActive ? " yut-board__track--3d" : ""}`}
+        aria-label="윷판 경로, 반시계 방향으로 진행"
+      >
+        <BoardStage
+          pieces={game.pieces}
+          slots={slots}
+          lastMove={game.lastMove}
+          onActive={setStageActive}
+          onAnimating={() => undefined}
+        />
         <div className="yut-board__segments" aria-hidden="true">
           {BOARD_SEGMENTS.map((segment) => (
             <span
