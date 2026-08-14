@@ -1,0 +1,188 @@
+/**
+ * 3D 윷판. three를 인수로 받아 렌더러를 만들지 않으므로 Node에서도 검증할 수 있다.
+ * 판을 수직으로 내려다보는 정사 투영이라 퍼센트 좌표가 그대로 화면 좌표가 된다.
+ */
+import {
+  BOARD_SEGMENTS,
+  CENTER_NODE_ID,
+  FIRST_STEP_NODE_ID,
+  NODE_COORDINATES,
+  SHORTCUT_GATES,
+  START_NODE_ID,
+} from "../boardLayout";
+
+type ThreeModule = typeof import("three");
+
+/** 판 100%가 차지하는 월드 길이. 값 자체는 취향이고, 비율만 중요하다. */
+export const BOARD_WORLD_SIZE = 10;
+/** 판 두께. 칸과 말이 그 위에 앉는다. */
+const BOARD_THICKNESS = 0.35;
+const NODE_RADIUS = 0.062 * BOARD_WORLD_SIZE;
+const NODE_HEIGHT = 0.05;
+const PATH_WIDTH = 0.022 * BOARD_WORLD_SIZE;
+
+/** 퍼센트 좌표를 월드로. x는 오른쪽, z는 화면 아래쪽, y는 판 위쪽이다. */
+export function nodeWorldPosition(nodeId: string): { x: number; y: number; z: number } {
+  const percent = NODE_COORDINATES[nodeId] ?? NODE_COORDINATES[START_NODE_ID];
+  return {
+    x: ((percent.x - 50) / 100) * BOARD_WORLD_SIZE,
+    y: 0,
+    z: ((percent.y - 50) / 100) * BOARD_WORLD_SIZE,
+  };
+}
+
+/**
+ * 절두체를 판 크기에 정확히 맞추고 수직으로 내려다본다.
+ * up을 -Z로 두어야 판의 z가 화면 아래로 가고 퍼센트 좌표와 방향이 맞는다.
+ */
+export function frameBoardCamera(THREE: ThreeModule, camera: import("three").OrthographicCamera): void {
+  const half = BOARD_WORLD_SIZE / 2;
+  camera.left = -half;
+  camera.right = half;
+  camera.top = half;
+  camera.bottom = -half;
+  camera.near = 0.1;
+  camera.far = BOARD_WORLD_SIZE * 4;
+  camera.up.set(0, 0, -1);
+  camera.position.set(0, BOARD_WORLD_SIZE, 0);
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+}
+
+export interface BoardScene {
+  scene: import("three").Scene;
+  camera: import("three").OrthographicCamera;
+  /** 말을 담는 층. Task 5가 여기에 넣는다. */
+  pieceLayer: import("three").Group;
+  nodeCount: number;
+  disposables: Array<{ dispose: () => void }>;
+}
+
+/** 길은 판보다 조금 파인 음각 띠로 그린다. */
+function addPaths(
+  THREE: ThreeModule,
+  scene: import("three").Scene,
+  disposables: BoardScene["disposables"],
+): void {
+  const material = new THREE.MeshStandardMaterial({ color: 0x6d5b46, roughness: 0.9 });
+  disposables.push(material);
+  BOARD_SEGMENTS.forEach((segment) => {
+    const from = nodeWorldPosition(segment.from);
+    const to = nodeWorldPosition(segment.to);
+    const length = Math.hypot(to.x - from.x, to.z - from.z);
+    const geometry = new THREE.BoxGeometry(length, 0.02, PATH_WIDTH);
+    disposables.push(geometry);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set((from.x + to.x) / 2, 0.012, (from.z + to.z) / 2);
+    mesh.rotation.y = -Math.atan2(to.z - from.z, to.x - from.x);
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  });
+}
+
+/** 칸. 출발점은 주홍, 길목과 방은 금색으로 두른다. DOM CSS가 하던 강조를 그대로 옮긴다. */
+function addNodes(
+  THREE: ThreeModule,
+  scene: import("three").Scene,
+  disposables: BoardScene["disposables"],
+): number {
+  const plain = new THREE.MeshStandardMaterial({ color: 0xf4ead3, roughness: 0.78 });
+  const start = new THREE.MeshStandardMaterial({ color: 0xc84a35, roughness: 0.6 });
+  const gate = new THREE.MeshStandardMaterial({ color: 0xd5a62d, roughness: 0.6 });
+  disposables.push(plain, start, gate);
+
+  const disc = new THREE.CylinderGeometry(NODE_RADIUS, NODE_RADIUS * 0.94, NODE_HEIGHT, 28);
+  const ring = new THREE.TorusGeometry(NODE_RADIUS * 1.12, NODE_RADIUS * 0.13, 10, 30)
+    .rotateX(Math.PI / 2);
+  disposables.push(disc, ring);
+
+  const nodeIds = Object.keys(NODE_COORDINATES);
+  nodeIds.forEach((nodeId) => {
+    const at = nodeWorldPosition(nodeId);
+    const isStart = nodeId === START_NODE_ID;
+    const isGate = SHORTCUT_GATES[nodeId] !== undefined;
+    const body = new THREE.Mesh(disc, isGate && nodeId === CENTER_NODE_ID ? gate : plain);
+    body.position.set(at.x, NODE_HEIGHT / 2, at.z);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    scene.add(body);
+
+    if (isStart || isGate) {
+      const emphasis = new THREE.Mesh(ring, isStart ? start : gate);
+      emphasis.position.set(at.x, NODE_HEIGHT * 0.9, at.z);
+      scene.add(emphasis);
+    }
+  });
+  return nodeIds.length;
+}
+
+/** 출발점과 길목이 가리키는 방향의 살촉. 판 좌표에서 각을 구한다. */
+function addArrows(
+  THREE: ThreeModule,
+  scene: import("three").Scene,
+  disposables: BoardScene["disposables"],
+): void {
+  const material = new THREE.MeshStandardMaterial({ color: 0xa8811a, roughness: 0.55 });
+  const startMaterial = new THREE.MeshStandardMaterial({ color: 0xc84a35, roughness: 0.55 });
+  const head = new THREE.ConeGeometry(NODE_RADIUS * 0.42, NODE_RADIUS * 0.72, 3)
+    .rotateX(Math.PI / 2);
+  disposables.push(material, startMaterial, head);
+
+  const arrows: Array<{ nodeId: string; toward: string; start: boolean }> = [
+    { nodeId: START_NODE_ID, toward: FIRST_STEP_NODE_ID, start: true },
+    ...Object.entries(SHORTCUT_GATES).map(([nodeId, toward]) => ({ nodeId, toward, start: false })),
+  ];
+
+  arrows.forEach(({ nodeId, toward, start }) => {
+    const at = nodeWorldPosition(nodeId);
+    const target = nodeWorldPosition(toward);
+    const angle = Math.atan2(target.z - at.z, target.x - at.x);
+    const distance = NODE_RADIUS * 1.75;
+    const mesh = new THREE.Mesh(head, start ? startMaterial : material);
+    mesh.position.set(at.x + Math.cos(angle) * distance, NODE_HEIGHT, at.z + Math.sin(angle) * distance);
+    mesh.rotation.y = -angle;
+    scene.add(mesh);
+  });
+}
+
+export function createBoardScene(THREE: ThreeModule): BoardScene {
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+  frameBoardCamera(THREE, camera);
+
+  const disposables: BoardScene["disposables"] = [];
+
+  const boardGeometry = new THREE.BoxGeometry(
+    BOARD_WORLD_SIZE * 1.02, BOARD_THICKNESS, BOARD_WORLD_SIZE * 1.02,
+  );
+  const boardMaterial = new THREE.MeshStandardMaterial({ color: 0xfff9eb, roughness: 0.85 });
+  disposables.push(boardGeometry, boardMaterial);
+  const board = new THREE.Mesh(boardGeometry, boardMaterial);
+  board.position.y = -BOARD_THICKNESS / 2;
+  board.receiveShadow = true;
+  scene.add(board);
+
+  addPaths(THREE, scene, disposables);
+  const nodeCount = addNodes(THREE, scene, disposables);
+  addArrows(THREE, scene, disposables);
+
+  scene.add(new THREE.HemisphereLight(0xfff4e2, 0x6a5842, 1.15));
+  // 주광만 그림자를 드리운다. 비스듬히 두어 말의 둥근 면이 살게 한다.
+  const key = new THREE.DirectionalLight(0xfff1d6, 1.9);
+  key.position.set(BOARD_WORLD_SIZE * 0.35, BOARD_WORLD_SIZE * 0.9, -BOARD_WORLD_SIZE * 0.3);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.radius = 3;
+  key.shadow.bias = -0.0015;
+  const span = BOARD_WORLD_SIZE * 0.75;
+  Object.assign(key.shadow.camera, {
+    left: -span, right: span, top: span, bottom: -span, near: 0.5, far: BOARD_WORLD_SIZE * 3,
+  });
+  key.shadow.camera.updateProjectionMatrix();
+  scene.add(key);
+
+  const pieceLayer = new THREE.Group();
+  scene.add(pieceLayer);
+
+  return { scene, camera, pieceLayer, nodeCount, disposables };
+}
