@@ -9,7 +9,7 @@ import {
   shockwaveAt,
   type BoardScene,
 } from "../three/boardScene";
-import { impactAt, knockAt, timelineFor, walkAt } from "../three/moveAnimation";
+import { impactAt, knockAt, timelineFor, vanishAt, walkAt } from "../three/moveAnimation";
 import { createPieceMesh, placePieceAt } from "../three/piece";
 
 type ThreeModule = typeof import("three");
@@ -267,37 +267,63 @@ export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: B
 
     const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     // 참으로 난 말은 판에 좌표가 없는 FINISH로 끝난다. 밟을 수 있는 칸까지만 걷는다.
+    const finishing = move.path[move.path.length - 1] === "FINISH";
     const walkable = move.path.filter((nodeId) => nodeId !== "FINISH");
-    if (reduceMotion || walkable.length === 0) return;
+    // 한 걸음으로 참으로 나면(path가 ["FINISH"]) 밟을 칸이 하나도 없다. 그때는 떠난 칸이
+    // 마지막 자리다. 이 목록이 비면 걸을 곳도, 사라질 자리도 없으므로 연출하지 않는다.
+    const trail = walkable.length > 0
+      ? walkable
+      : (finishing && move.fromNodeId ? [move.fromNodeId] : []);
+    if (reduceMotion || trail.length === 0) return;
 
-    const destinationNodeId = walkable[walkable.length - 1];
+    const destinationNodeId = trail[trail.length - 1];
     const destination = nodeWorldPosition(destinationNodeId);
+    // 출발 대기에서 나온 말은 떠난 칸이 없다. 그때는 첫 칸에서 걸음을 시작한다.
+    const departureNodeId = move.fromNodeId ?? trail[0];
     // 걸어갈 덩이는 도착 칸에 이미 서 있는 그 덩이다. 출발 칸으로 되돌려 다시 걸어오게 한다.
-    const walker = [...stage.stones.values()].find((stone) =>
-      move.pieceIds.some((pieceId) => stone.pieceIds.includes(pieceId)));
-    stage.walking = walker ?? null;
+    const stone = [...stage.stones.values()].find((s) =>
+      move.pieceIds.some((pieceId) => s.pieceIds.includes(pieceId)));
+    // 권위 있는 자리로 되돌릴 것은 판 위의 덩이뿐이다. 유령은 치우면 그만이다.
+    stage.walking = stone ?? null;
 
-    // 잡힌 말은 권위 있는 상태에서 이미 대기 칸으로 돌아가 판에 없다.
-    // 튕겨내기를 보여 주려면 도착 칸에 잠깐 되살려야 한다.
-    stoneGroups(
-      view.pieces.filter((piece) => move.capturedPieceIds.includes(piece.id)),
-      view.slots,
-      () => true,
-      () => destinationNodeId,
-    ).forEach((group) => {
+    /** 판에 없는 말을 잠깐 되살린다. 유령은 stage.ghosts 하나로만 관리한다. */
+    const spawnGhost = (group: StoneGroup, nodeId: string): Stone => {
       const created = createPieceMesh(THREE, group.slot, group.stackSize);
-      placePieceAt(created.mesh, destination);
+      placePieceAt(created.mesh, nodeWorldPosition(nodeId));
       stage.board.pieceLayer.add(created.mesh);
-      stage.ghosts.push({
+      const ghost: Stone = {
         ...created,
         pieceIds: [...group.pieceIds],
         stackSize: group.stackSize,
         slot: group.slot,
-        nodeId: destinationNodeId,
-      });
-    });
+        nodeId,
+      };
+      stage.ghosts.push(ghost);
+      return ghost;
+    };
 
-    const timeline = timelineFor(walkable.length, move.capturedPieceIds.length);
+    // 참으로 난 말은 같은 스냅숏에서 이미 FINISHED라 판에서 내려갔다. 잡힌 말과 똑같은
+    // 함정이므로 똑같이 유령으로 푼다. 걷고 나서 마지막 칸에서 사그라든다.
+    const walker = stone ?? (finishing
+      ? stoneGroups(
+        view.pieces.filter((piece) => move.pieceIds.includes(piece.id)),
+        view.slots,
+        () => true,
+        () => departureNodeId,
+      ).map((group) => spawnGhost(group, departureNodeId))[0]
+      : undefined);
+
+    // 잡힌 말은 권위 있는 상태에서 이미 대기 칸으로 돌아가 판에 없다.
+    // 튕겨내기를 보여 주려면 도착 칸에 잠깐 되살려야 한다.
+    // 걷는 유령과 움직임이 다르므로 따로 붙잡아 둔다(치우는 것은 stage.ghosts가 함께 한다).
+    const knocked = stoneGroups(
+      view.pieces.filter((piece) => move.capturedPieceIds.includes(piece.id)),
+      view.slots,
+      () => true,
+      () => destinationNodeId,
+    ).map((group) => spawnGhost(group, destinationNodeId));
+
+    const timeline = timelineFor(trail.length, move.capturedPieceIds.length, finishing);
     animatingRef.current([...move.pieceIds, ...move.capturedPieceIds]);
 
     // 고리의 높이는 판이 정한다. 연출은 어느 칸에서 퍼질지만 정한다.
@@ -329,16 +355,18 @@ export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: B
         return;
       }
       const elapsed = now - start;
-      const walk = walkAt(walkable.length, elapsed);
-      const fromNodeId = walk.from < 0 ? move.fromNodeId ?? walkable[0] : walkable[walk.from];
+      const walk = walkAt(trail.length, elapsed);
+      const fromNodeId = walk.from < 0 ? departureNodeId : trail[walk.from];
       const from = nodeWorldPosition(fromNodeId);
-      const to = nodeWorldPosition(walkable[walk.to]);
+      const to = nodeWorldPosition(trail[walk.to]);
       if (walker) {
         walker.mesh.position.set(
           from.x + (to.x - from.x) * walk.t,
           0.05 + walk.hop * 0.45,
           from.z + (to.z - from.z) * walk.t,
         );
+        // 참으로 난 말은 마지막 칸에 닿은 뒤 그 자리에서 작아져 사라진다.
+        if (finishing) walker.mesh.scale.setScalar(Math.max(vanishAt(timeline, elapsed), 0.001));
       }
 
       const impact = impactAt(timeline, elapsed);
@@ -350,7 +378,7 @@ export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: B
       }
 
       const knock = knockAt(timeline, elapsed);
-      stage.ghosts.forEach((ghost) => {
+      knocked.forEach((ghost) => {
         ghost.mesh.position.set(destination.x, 0.05 + knock.lift, destination.z + knock.drift);
         ghost.mesh.scale.setScalar(Math.max(knock.scale, 0.001));
       });

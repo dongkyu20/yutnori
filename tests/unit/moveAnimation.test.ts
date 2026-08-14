@@ -3,6 +3,7 @@ import {
   impactAt,
   knockAt,
   timelineFor,
+  vanishAt,
   walkAt,
   STEP_MS,
   WALK_MAX_MS,
@@ -75,6 +76,31 @@ describe("이동 연출 시간", () => {
     expect(impactAt(timeline, timeline.walkMs + timeline.impactMs / 2)).toBeGreaterThan(0);
     expect(impactAt(timeline, timeline.totalMs)).toBe(0);
     expect(impactAt(timelineFor(2, 0), 10)).toBe(0);
+  });
+
+  it("gives a finishing piece its own window after the walk", () => {
+    const plain = timelineFor(2, 0);
+    const finishing = timelineFor(2, 0, true);
+
+    expect(plain.vanishMs).toBe(0);
+    expect(finishing.walkMs).toBe(plain.walkMs);
+    expect(finishing.vanishMs).toBeGreaterThan(0);
+    expect(finishing.totalMs).toBe(finishing.walkMs + finishing.vanishMs);
+  });
+
+  it("shrinks the finishing piece away only after it has walked its last node", () => {
+    const timeline = timelineFor(2, 0, true);
+
+    // 걷는 동안에는 원래 크기 그대로다.
+    expect(vanishAt(timeline, 0)).toBe(1);
+    expect(vanishAt(timeline, timeline.walkMs)).toBe(1);
+    const mid = vanishAt(timeline, timeline.walkMs + timeline.vanishMs * 0.5);
+    expect(mid).toBeLessThan(1);
+    expect(mid).toBeGreaterThan(0);
+    // 끝에서 정확히 0이 되어 흔적을 남기지 않는다.
+    expect(vanishAt(timeline, timeline.totalMs)).toBeCloseTo(0, 6);
+    // 참으로 나지 않는 이동은 말이 그대로 서 있어야 한다.
+    expect(vanishAt(timelineFor(2, 0), 10_000)).toBe(1);
   });
 
   it("throws the captured stone up, carries it toward its rack, and shrinks it away", () => {
