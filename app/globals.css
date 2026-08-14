@@ -295,6 +295,8 @@ button, input, select, textarea { min-height: 44px; }
 .yut-board__track--3d .yut-board__node::before,
 .yut-board__track--3d .yut-board__node::after { display: none; }
 .yut-board__track--3d .yut-piece { background: transparent; border-color: transparent; box-shadow: none; text-shadow: 0 1px 3px rgb(31 39 36 / 85%); }
+/* 업힌 개수는 3D에서 겹쳐 놓은 돌이 대신 말한다. 숫자는 라벨에만 남아 스크린 리더가 읽는다. */
+.yut-board__track--3d .yut-piece__count { display: none; }
 
 .yut-board__segments { position: absolute; inset: 0; z-index: -2; }
 .yut-board__segment { position: absolute; left: var(--segment-x); top: var(--segment-y); width: var(--segment-length); height: 4px; transform: translateY(-50%) rotate(var(--segment-angle)); transform-origin: left center; }

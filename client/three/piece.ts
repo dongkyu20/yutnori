@@ -1,6 +1,7 @@
 /**
  * 판 위의 말. 낮고 둥근 조약돌이며 편 색을 그대로 쓴다.
- * 수직으로 내려다보므로 개수는 형상이 아니라 DOM 글자가 읽는다. 여기서는 두께로만 무게를 준다.
+ * 업힌 묶음은 말 하나하나를 판을 따라 어긋나게 놓아 겹쳐 보이게 한다.
+ * 수직으로 내려다보는 판에서는 높이가 화면 자리를 바꾸지 못하므로 위로 쌓아서는 셀 수 없다.
  */
 import { SIDE_COLORS } from "../sideColor";
 import { BOARD_WORLD_SIZE } from "./boardScene";
@@ -8,14 +9,23 @@ import { BOARD_WORLD_SIZE } from "./boardScene";
 type ThreeModule = typeof import("three");
 
 export const PIECE_RADIUS = 0.042 * BOARD_WORLD_SIZE;
-const BASE_HEIGHT = PIECE_RADIUS * 0.5;
-/** 업힌 말 하나마다 이만큼 두꺼워진다. */
-const STACK_STEP = PIECE_RADIUS * 0.28;
+const STONE_HEIGHT = PIECE_RADIUS * 0.5;
+/**
+ * 업힌 말 하나마다 판을 따라 밀어 놓는 거리(반지름 대비).
+ * 수가 적을수록 더 벌린다. 둘뿐인데 바짝 붙이면 겹친 게 아니라 길쭉한 돌 하나로 보인다.
+ * 대신 수가 많아지면 좁혀서, 묶음이 차지하는 폭은 어느 경우든 한 칸 안에 든다.
+ */
+const STACK_SPREAD: Readonly<Record<number, number>> = { 1: 0, 2: 0.88, 3: 0.7, 4: 0.58 };
+/** 뒤에 놓이는 말일수록 아주 조금 높아 앞의 말을 가린다. 겹치는 순서를 눈에 보이게 한다. */
+const STACK_RISE = PIECE_RADIUS * 0.2;
+/** 한 편이 가진 말은 넷뿐이다. */
 const MAX_STACK = 4;
+/** 어긋나는 방향. 화면에서 왼쪽 위로 쌓여 올라가 보인다. */
+const SPREAD_X = -0.72;
+const SPREAD_Z = -0.7;
 
-export function pieceHeight(stackSize: number): number {
-  const rides = Math.min(Math.max(stackSize, 1), MAX_STACK) - 1;
-  return BASE_HEIGHT + rides * STACK_STEP;
+function stoneCount(stackSize: number): number {
+  return Math.min(Math.max(Math.round(stackSize), 1), MAX_STACK);
 }
 
 /**
@@ -27,29 +37,38 @@ export function createPieceMesh(
   stackSize: number,
 ): { mesh: import("three").Group; disposables: Array<{ dispose: () => void }> } {
   const colour = SIDE_COLORS[slot] ?? SIDE_COLORS[0];
-  const height = pieceHeight(stackSize);
+  const riders = stoneCount(stackSize);
   const disposables: Array<{ dispose: () => void }> = [];
 
   const side = new THREE.MeshStandardMaterial({ color: colour.deep, roughness: 0.62, metalness: 0.05 });
   const top = new THREE.MeshStandardMaterial({ color: colour.base, roughness: 0.48, metalness: 0.05 });
   disposables.push(side, top);
 
-  const body = new THREE.CylinderGeometry(PIECE_RADIUS, PIECE_RADIUS * 0.92, height, 30);
+  const body = new THREE.CylinderGeometry(PIECE_RADIUS, PIECE_RADIUS * 0.92, STONE_HEIGHT, 30);
   // 위쪽 반구를 눌러 조약돌처럼 만든다.
   const dome = new THREE.SphereGeometry(PIECE_RADIUS, 30, 12, 0, Math.PI * 2, 0, Math.PI / 2)
     .scale(1, 0.42, 1);
   disposables.push(body, dome);
 
   const group = new THREE.Group();
-  const bodyMesh = new THREE.Mesh(body, side);
-  bodyMesh.position.y = height / 2;
-  const domeMesh = new THREE.Mesh(dome, top);
-  domeMesh.position.y = height;
-  [bodyMesh, domeMesh].forEach((mesh) => {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    group.add(mesh);
-  });
+  // 묶음의 한가운데가 칸 위에 오도록 어긋난 만큼의 절반을 되돌려 놓는다.
+  const centre = (riders - 1) / 2;
+  const spread = PIECE_RADIUS * (STACK_SPREAD[riders] ?? STACK_SPREAD[MAX_STACK]);
+  for (let rider = 0; rider < riders; rider += 1) {
+    const offsetX = (rider - centre) * spread * SPREAD_X;
+    const offsetZ = (rider - centre) * spread * SPREAD_Z;
+    const lift = rider * STACK_RISE;
+
+    const bodyMesh = new THREE.Mesh(body, side);
+    bodyMesh.position.set(offsetX, lift + STONE_HEIGHT / 2, offsetZ);
+    const domeMesh = new THREE.Mesh(dome, top);
+    domeMesh.position.set(offsetX, lift + STONE_HEIGHT, offsetZ);
+    [bodyMesh, domeMesh].forEach((mesh) => {
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    });
+  }
 
   return { mesh: group, disposables };
 }
