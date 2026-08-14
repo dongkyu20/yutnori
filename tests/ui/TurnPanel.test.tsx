@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PublicGameState, PublicRoomSnapshot } from "../../shared/protocol";
 import { TurnPanel } from "../../client/components/TurnPanel";
+import { SETTLE_MS } from "../../client/three/yutStick";
 import { GameScreen } from "../../client/components/GameScreen";
 
 function createGame(overrides: Partial<PublicGameState> = {}): PublicGameState {
@@ -34,6 +35,9 @@ describe("TurnPanel", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    // 스텁한 matchMedia는 restoreAllMocks가 되돌리지 않는다. 남겨 두면 다음 시험이
+    // 움직임을 줄인 환경으로 오해해 연출이 아예 없는 것으로 본다.
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -112,6 +116,62 @@ describe("TurnPanel", () => {
     expect(onThrow).toHaveBeenCalledTimes(2);
   });
 
+  it("holds the result back until the sticks have landed", () => {
+    // 결과를 먼저 글자로 알려 주면 굴러가는 윷을 볼 까닭이 없어진다.
+    vi.useFakeTimers();
+    const initial = createGame({
+      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
+    });
+    const { rerender } = render(
+      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
+    );
+    expect(screen.getByText("던진 결과: 도")).toBeInTheDocument();
+
+    rerender(
+      <TurnPanel
+        game={{ ...initial, lastThrow: { eventId: "event-2", result: "MO", sticks: [true, true, true, true] } }}
+        currentPlayerNickname="민수"
+        isCurrentPlayer
+        onThrow={() => undefined}
+      />,
+    );
+    expect(screen.queryByText("던진 결과: 모")).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(SETTLE_MS - 50));
+    expect(screen.queryByText("던진 결과: 모")).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(50));
+    expect(screen.getByText("던진 결과: 모")).toBeInTheDocument();
+  });
+
+  it("shows the result at once for a player who asked for less motion", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("prefers-reduced-motion"),
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    const initial = createGame({
+      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
+    });
+    const { rerender } = render(
+      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
+    );
+
+    rerender(
+      <TurnPanel
+        game={{ ...initial, lastThrow: { eventId: "event-2", result: "MO", sticks: [true, true, true, true] } }}
+        currentPlayerNickname="민수"
+        isCurrentPlayer
+        onThrow={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText("던진 결과: 모")).toBeInTheDocument();
+    expect(screen.getByTestId("yut-sticks")).not.toHaveAttribute("data-animating", "true");
+  });
+
   it("animates sticks only when the authoritative throw event id changes", () => {
     const initial = createGame({
       turnStage: "AWAITING_PIECE",
@@ -186,7 +246,7 @@ describe("TurnPanel", () => {
     expect(secondAnimatedSticks).not.toBe(firstAnimatedSticks);
     expect(secondAnimatedSticks).toHaveAttribute("data-animating", "true");
 
-    act(() => vi.advanceTimersByTime(650));
+    act(() => vi.advanceTimersByTime(SETTLE_MS));
     expect(screen.getByTestId("yut-sticks")).not.toHaveAttribute("data-animating", "true");
   });
 

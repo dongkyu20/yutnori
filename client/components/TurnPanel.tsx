@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { PublicGameState } from "../../shared/protocol";
+import { SETTLE_MS } from "../three/yutStick";
 import { YutSticks } from "./YutSticks";
 
 interface TurnPanelProps {
@@ -37,18 +38,32 @@ export function TurnPanel({
   onThrow,
 }: TurnPanelProps) {
   const currentThrowEventId = game.lastThrow?.eventId ?? null;
-  const previousThrowEventId = useRef(currentThrowEventId);
-  const [animating, setAnimating] = useState(false);
+  const [throwState, setThrowState] = useState(() => ({ eventId: currentThrowEventId, rolling: false }));
+
+  // 새 던지기는 그리는 그 자리에서 굴리기 시작한다. 효과로 미루면 결과 글자가
+  // 한 프레임 먼저 지나가고, 그걸 본 사람에게는 연출이 뒷북이 된다.
+  if (throwState.eventId !== currentThrowEventId) {
+    // 움직임을 줄여 달라고 한 사람에게는 굴리지 않으므로 기다릴 것도 없다.
+    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    setThrowState({ eventId: currentThrowEventId, rolling: currentThrowEventId !== null && !reduceMotion });
+  }
+  const animating = throwState.rolling;
 
   useEffect(() => {
-    if (currentThrowEventId && currentThrowEventId !== previousThrowEventId.current) {
-      setAnimating(true);
-      const timer = window.setTimeout(() => setAnimating(false), 650);
-      previousThrowEventId.current = currentThrowEventId;
-      return () => window.clearTimeout(timer);
-    }
-    previousThrowEventId.current = currentThrowEventId;
-  }, [currentThrowEventId]);
+    if (!throwState.rolling) return;
+    const timer = window.setTimeout(
+      () => setThrowState((current) => ({ ...current, rolling: false })),
+      SETTLE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [throwState.eventId, throwState.rolling]);
+
+  // 윷가락이 멎기 전에 결과를 글자로 알려 주면 굴러가는 윷을 볼 까닭이 없어진다.
+  const resultText = animating
+    ? "윷가락이 구르는 중…"
+    : game.lastThrow
+      ? `던진 결과: ${RESULT_NAMES[game.lastThrow.result]}`
+      : "아직 던진 결과가 없습니다";
 
   return (
     <aside className="turn-panel" aria-labelledby="turn-panel-heading">
@@ -57,7 +72,7 @@ export function TurnPanel({
       <p className="turn-panel__guidance">{guidanceFor(game)}</p>
       <section className="yut-result" aria-labelledby="yut-result-heading">
         <h3 id="yut-result-heading">윷 결과</h3>
-        <p>{game.lastThrow ? `던진 결과: ${RESULT_NAMES[game.lastThrow.result]}` : "아직 던진 결과가 없습니다"}</p>
+        <p data-throw-settled={animating ? undefined : "true"}>{resultText}</p>
         <YutSticks
           sticks={game.lastThrow?.sticks ?? [false, false, false, false]}
           animating={animating}

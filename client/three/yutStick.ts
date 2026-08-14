@@ -22,6 +22,10 @@ export const MARKED_INDEX = 0;
 
 export const TOSS_MS = 780;
 export const STAGGER_MS = 55;
+/** 윷가락은 네 개다. 하나씩 늦게 떨어지므로 마지막 것이 언제 멎는지가 곧 연출의 끝이다. */
+export const STICK_COUNT = 4;
+/** 던진 순간부터 넷이 모두 멎을 때까지. 결과를 글자로 알리는 때이기도 하다. */
+export const SETTLE_MS = TOSS_MS + STAGGER_MS * (STICK_COUNT - 1);
 const LIFT = 2.05;
 
 /* 멍석을 위에서 내려다보는 시선. */
