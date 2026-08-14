@@ -175,6 +175,9 @@ export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: B
       stage.board.pieceLayer.remove(stone.mesh);
       stone.disposables.forEach((item) => { item.dispose(); });
       stage.stones.delete(key);
+      // 걷던 덩이를 지웠다면 연출이 붙잡은 손을 놓아 준다. 치운 메시를 나중에 다시
+      // 앉히려 들지 않게 한다.
+      if (stage.walking === stone) stage.walking = null;
     });
 
     wanted.forEach((group, key) => {
