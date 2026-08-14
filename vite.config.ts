@@ -44,9 +44,13 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    server: {
+      // 같은 네트워크의 다른 기기에서 들어올 수 있도록 모든 인터페이스에 연다.
+      // vinext dev가 --host 플래그를 넘겨주지 않으므로 여기서 정한다.
+      // 혼자 쓸 때 노출을 막고 싶으면 이 줄을 지우면 localhost로만 열린다.
+      host: true,
+      ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
+    },
     plugins: [
       vinext(),
       sites(),
