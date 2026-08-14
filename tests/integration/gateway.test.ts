@@ -501,6 +501,35 @@ describe("Socket.IO gateway", () => {
     await kickedEvent;
   });
 
+  it("releases the socket of a player who leaves, and tells the room", async () => {
+    const url = await startServer();
+    const { host, guest, guestSession, snapshot } = await createAndJoin(url);
+    const hostSnapshotEvent = event<PublicRoomSnapshot>(host, "snapshot");
+    const leftEvent = event(guest, "disconnect");
+
+    guest.emit("command", {
+      type: "LEAVE_ROOM",
+      roomVersion: snapshot.version,
+      requestId: requestId(9),
+    });
+
+    const remaining = await hostSnapshotEvent;
+    expect(remaining.players.some((player) => player.id === guestSession.playerId)).toBe(false);
+    // 소켓까지 놓아 주어야 남은 표로 다시 붙지 않는다.
+    await leftEvent;
+    // 거절은 붙는 그 순간 날아오므로 붙기 전에 귀를 대 둔다.
+    const returning = connect(url, {
+      autoConnect: false,
+      transports: ["websocket"],
+      extraHeaders: { Origin: PUBLIC_ORIGIN },
+      auth: { reconnectToken: guestSession.reconnectToken },
+    });
+    sockets.push(returning);
+    const rejected = event<ServerError>(returning, "server_error");
+    returning.connect();
+    expect((await rejected).code).toBe("SESSION_NOT_FOUND");
+  });
+
   it("broadcasts only the four protocol reactions with the authenticated player ID", async () => {
     const url = await startServer();
     const { host, guest, guestSession } = await createAndJoin(url);
@@ -553,6 +582,27 @@ describe("Socket.IO gateway", () => {
     const resetReaction = event<ReactionPayload>(host, "reaction");
     guest.emit("command", { type: "REACT", emoji: "🎉" });
     expect(await resetReaction).toEqual({ playerId: guestSession.playerId, emoji: "🎉" });
+  });
+
+  it("lets a player leave after the general command quota is exhausted", async () => {
+    const url = await startRateLimitedServer({
+      now: () => 0,
+      maxCommands: 1,
+      maxReactions: 4,
+    });
+    const { host, guest, guestSession, snapshot } = await createAndJoin(url);
+    const remainingEvent = event<PublicRoomSnapshot>(host, "snapshot");
+    const disconnectedEvent = event(guest, "disconnect");
+
+    guest.emit("command", {
+      type: "LEAVE_ROOM",
+      roomVersion: snapshot.version,
+      requestId: requestId(10),
+    });
+
+    expect((await remainingEvent).players.map((player) => player.id))
+      .not.toContain(guestSession.playerId);
+    await disconnectedEvent;
   });
 
   it("counts invalid raw commands against the general per-socket quota", async () => {

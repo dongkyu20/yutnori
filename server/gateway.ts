@@ -225,11 +225,15 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
 
     socket.on("command", (raw: unknown) => {
       const now = rateLimit.now();
-      if (!consumeQuota(commandQuota, now, rateLimit.windowMs, rateLimit.maxCommands)) {
+      const result = parseClientCommand(raw);
+      const bypassCommandQuota = result.success && result.data.type === "LEAVE_ROOM";
+      if (
+        !bypassCommandQuota &&
+        !consumeQuota(commandQuota, now, rateLimit.windowMs, rateLimit.maxCommands)
+      ) {
         emitError(socket, RATE_LIMITED);
         return;
       }
-      const result = parseClientCommand(raw);
       if (!result.success) {
         emitError(socket, INVALID_COMMAND);
         return;
@@ -244,6 +248,11 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
       try {
         const kickedPlayerId = result.data.type === "KICK_PLAYER"
           ? result.data.playerId
+          : undefined;
+        // 스스로 나간 사람의 자리는 서버가 지웠다. 소켓도 함께 놓아 주어야
+        // 남은 표로 다시 붙지 않는다.
+        const leavingPlayerId = result.data.type === "LEAVE_ROOM"
+          ? socket.data.playerId
           : undefined;
         if (result.data.type === "CREATE_ROOM" || result.data.type === "JOIN_ROOM") {
           if (socket.data.playerId) {
@@ -265,6 +274,7 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
         }
         handleValidatedCommand(io, roomService, socket, result.data);
         if (kickedPlayerId) evictPlayer(kickedPlayerId);
+        if (leavingPlayerId) evictPlayer(leavingPlayerId);
       } catch (error) {
         emitError(socket, mapError(error));
       }
