@@ -78,4 +78,59 @@ describe("BoardStage", () => {
     expect(screen.getByTestId("board-node-O0")).toHaveClass("yut-board__node--start");
     expect(screen.getByLabelText(/윷판 경로/)).not.toHaveClass("yut-board__track--3d");
   });
+
+  it("never announces an animation when the stage could not start", () => {
+    const onAnimating = vi.fn();
+    render(
+      <BoardStage
+        pieces={pieces}
+        slots={sideSlots(pieces)}
+        lastMove={{
+          eventId: "event-4",
+          pieceIds: ["a-1"],
+          fromNodeId: "O1",
+          path: ["O2", "O3"],
+          capturedPieceIds: [],
+        }}
+        onActive={() => undefined}
+        onAnimating={onAnimating}
+      />,
+    );
+
+    // WebGL이 없으면 연출도 없다. 2D 판은 결과 자리를 바로 보여 준다.
+    expect(onAnimating).not.toHaveBeenCalled();
+  });
+
+  it("hides the moving piece text only while the board animates", () => {
+    const { rerender } = render(
+      <YutBoard
+        game={game()}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={[]}
+        onSelectPiece={() => undefined}
+        onSelectRoute={() => undefined}
+        animatingPieceIds={["a-1"]}
+      />,
+    );
+
+    // 글자는 3D 말과 함께 걸어갈 수 없으므로 연출 동안만 감춘다. 버튼은 그대로 남는다.
+    const piece = screen.getByRole("button", { name: "민수 말 1개 바깥 지점 3" });
+    expect(piece).toHaveClass("yut-piece--travelling");
+    expect(piece).toBeInTheDocument();
+
+    rerender(
+      <YutBoard
+        game={game()}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={[]}
+        onSelectPiece={() => undefined}
+        onSelectRoute={() => undefined}
+        animatingPieceIds={[]}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "민수 말 1개 바깥 지점 3" }))
+      .not.toHaveClass("yut-piece--travelling");
+  });
 });

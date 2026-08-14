@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { PublicGameState } from "../../shared/protocol";
 import { sideSlotOf } from "../sideColor";
 import { createBoardScene, nodeWorldPosition, type BoardScene } from "../three/boardScene";
+import { impactAt, knockAt, timelineFor, walkAt } from "../three/moveAnimation";
 import { createPieceMesh, placePieceAt } from "../three/piece";
 
 type ThreeModule = typeof import("three");
@@ -57,7 +58,8 @@ interface StoneGroup {
 
 /**
  * 말을 `칸:편`으로 모은다. 같은 칸의 같은 편은 업힌 한 덩이다.
- * `onlyBoard`가 false면 잡혀서 대기 칸으로 돌아간 말도 모은다. 튕겨내기 연출에 쓴다.
+ * `filter`로 모을 말을 고르고, `nodeIdOf`로 그 말이 놓일 칸을 정한다.
+ * 잡기 연출은 대기 칸으로 돌아간 말을 도착 칸에 되살려야 하므로 이 둘을 갈아 끼운다.
  */
 function stoneGroups(
   pieces: readonly Piece[],
@@ -99,15 +101,19 @@ function boardGroups(pieces: readonly Piece[], slots: ReadonlyMap<string, number
   );
 }
 
-export function BoardStage({ pieces, slots, onActive }: BoardStageProps) {
+export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: BoardStageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<Stage | null>(null);
   const threeRef = useRef<ThreeModule | null>(null);
   const activeRef = useRef(onActive);
-  const viewRef = useRef({ pieces, slots });
+  const frameRef = useRef(0);
+  const playedRef = useRef<string | null>(null);
+  const animatingRef = useRef(onAnimating);
+  const lastMoveRef = useRef(lastMove);
 
   useEffect(() => { activeRef.current = onActive; }, [onActive]);
-  useEffect(() => { viewRef.current = { pieces, slots }; }, [pieces, slots]);
+  useEffect(() => { animatingRef.current = onAnimating; }, [onAnimating]);
+  useEffect(() => { lastMoveRef.current = lastMove; }, [lastMove]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -169,6 +175,8 @@ export function BoardStage({ pieces, slots, onActive }: BoardStageProps) {
       resize();
       observer = new ResizeObserver(resize);
       observer.observe(canvas);
+      // 재접속하면 스냅숏에 지난 자취가 담겨 온다. 처음 본 것은 재생하지 않는다.
+      playedRef.current = lastMoveRef.current?.eventId ?? null;
       activeRef.current(true);
     });
 
@@ -228,6 +236,123 @@ export function BoardStage({ pieces, slots, onActive }: BoardStageProps) {
 
     stage.renderer.render(stage.board.scene, stage.board.camera);
   }, [pieces, slots]);
+
+  // 새 자취가 오면 걸어가고, 잡았으면 튕겨낸다. 반드시 말을 놓는 효과 **아래**에 선언한다.
+  useEffect(() => {
+    const stage = stageRef.current;
+    const THREE = threeRef.current;
+    if (!stage || !THREE || stage.lost || !lastMove) return;
+    if (playedRef.current === lastMove.eventId) return;
+    playedRef.current = lastMove.eventId;
+
+    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    // 참으로 난 말은 판에 좌표가 없는 FINISH로 끝난다. 밟을 수 있는 칸까지만 걷는다.
+    const walkable = lastMove.path.filter((nodeId) => nodeId !== "FINISH");
+    if (reduceMotion || walkable.length === 0) return;
+
+    const destinationNodeId = walkable[walkable.length - 1];
+    const destination = nodeWorldPosition(destinationNodeId);
+    // 걸어갈 덩이는 도착 칸에 이미 서 있는 그 덩이다. 출발 칸으로 되돌려 다시 걸어오게 한다.
+    const walker = [...stage.stones.values()].find((stone) =>
+      lastMove.pieceIds.some((pieceId) => stone.pieceIds.includes(pieceId)));
+
+    // 잡힌 말은 권위 있는 상태에서 이미 대기 칸으로 돌아가 판에 없다.
+    // 튕겨내기를 보여 주려면 도착 칸에 잠깐 되살려야 한다.
+    stoneGroups(
+      pieces.filter((piece) => lastMove.capturedPieceIds.includes(piece.id)),
+      slots,
+      () => true,
+      () => destinationNodeId,
+    ).forEach((group) => {
+      const created = createPieceMesh(THREE, group.slot, group.stackSize);
+      placePieceAt(created.mesh, destination);
+      stage.board.pieceLayer.add(created.mesh);
+      stage.ghosts.push({
+        ...created,
+        pieceIds: [...group.pieceIds],
+        stackSize: group.stackSize,
+        slot: group.slot,
+        nodeId: destinationNodeId,
+      });
+    });
+
+    const timeline = timelineFor(walkable.length, lastMove.capturedPieceIds.length);
+    animatingRef.current([...lastMove.pieceIds, ...lastMove.capturedPieceIds]);
+
+    const ring = stage.ring;
+    if (ring) ring.position.set(destination.x, 0.06, destination.z);
+
+    const finish = () => {
+      // 권위 있는 자리로 되돌리고, 잠깐 살렸던 말을 치운다.
+      if (walker) placePieceAt(walker.mesh, nodeWorldPosition(walker.nodeId));
+      if (ring) ring.visible = false;
+      stage.ghosts.forEach((ghost) => {
+        stage.board.pieceLayer.remove(ghost.mesh);
+        ghost.disposables.forEach((item) => { item.dispose(); });
+      });
+      stage.ghosts = [];
+      if (!stage.lost) stage.renderer.render(stage.board.scene, stage.board.camera);
+      animatingRef.current([]);
+    };
+
+    const start = performance.now();
+    const step = (now: number) => {
+      if (stage.lost) {
+        finish();
+        return;
+      }
+      const elapsed = now - start;
+      const walk = walkAt(walkable.length, elapsed);
+      const fromNodeId = walk.from < 0 ? lastMove.fromNodeId ?? walkable[0] : walkable[walk.from];
+      const from = nodeWorldPosition(fromNodeId);
+      const to = nodeWorldPosition(walkable[walk.to]);
+      if (walker) {
+        walker.mesh.position.set(
+          from.x + (to.x - from.x) * walk.t,
+          0.05 + walk.hop * 0.45,
+          from.z + (to.z - from.z) * walk.t,
+        );
+      }
+
+      const impact = impactAt(timeline, elapsed);
+      if (ring) {
+        ring.visible = impact > 0;
+        ring.scale.setScalar(0.4 + impact * 2.6);
+        (ring.material as import("three").MeshBasicMaterial).opacity = 0.75 * (1 - impact);
+      }
+
+      const knock = knockAt(timeline, elapsed);
+      stage.ghosts.forEach((ghost) => {
+        ghost.mesh.position.set(destination.x, 0.05 + knock.lift, destination.z + knock.drift);
+        ghost.mesh.scale.setScalar(Math.max(knock.scale, 0.001));
+      });
+
+      stage.renderer.render(stage.board.scene, stage.board.camera);
+      if (elapsed < timeline.totalMs) {
+        frameRef.current = requestAnimationFrame(step);
+        return;
+      }
+      finish();
+    };
+    cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(step);
+
+    // 언마운트하거나 다음 자취가 겹쳐 오면 이 자취의 진행을 여기서 끊는다. 정상 종료라면
+    // finish()가 이미 유령을 치우고 고리를 꺼 두었으므로 아래는 그저 다시 훑을 뿐 안전하다.
+    // 겹쳐 온 다음 자취라면 이 정리가 새 연출의 준비보다 먼저 실행되어, 이전 유령이
+    // 새 튕겨내기 프레임에 섞여 들어가는 일이 없다. onAnimating도 함께 비워, 중간에
+    // 끊긴 연출의 글자 숨김이 다음 렌더까지 남지 않게 한다.
+    return () => {
+      cancelAnimationFrame(frameRef.current);
+      stage.ghosts.forEach((ghost) => {
+        stage.board.pieceLayer.remove(ghost.mesh);
+        ghost.disposables.forEach((item) => { item.dispose(); });
+      });
+      stage.ghosts = [];
+      if (ring) ring.visible = false;
+      animatingRef.current([]);
+    };
+  }, [lastMove, pieces, slots]);
 
   return <canvas className="yut-board__canvas" ref={canvasRef} aria-hidden="true" />;
 }

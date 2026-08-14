@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import type { PublicGameState, PublicRoomSnapshot, TeamId } from "../../shared/protocol";
 import { sideClass, sideSlotOf, sideSlots } from "../sideColor";
 import {
@@ -33,6 +33,8 @@ interface YutBoardProps {
   legalPieceIds: readonly string[];
   onSelectPiece: (pieceId: string) => void;
   onSelectRoute: (routeId: string) => void;
+  /** 지금 연출 중인 말. 이 말의 글자는 3D 말과 어긋나므로 감춘다. */
+  animatingPieceIds?: readonly string[];
 }
 
 function nodeStyle(nodeId: string): CSSProperties {
@@ -140,11 +142,17 @@ export function YutBoard({
   legalPieceIds,
   onSelectPiece,
   onSelectRoute,
+  animatingPieceIds = [],
 }: YutBoardProps) {
   const isCurrentPlayer = playerId === game.currentPlayerId;
   const legalPieces = new Set(legalPieceIds);
-  const slots = sideSlots(game.pieces);
+  // game.pieces가 새 배열로 올 때만 다시 만든다. 그렇지 않으면 무관한 리렌더마다
+  // BoardStage에 새 slots를 넘겨 그 효과들이 다시 돌게 된다.
+  const slots = useMemo(() => sideSlots(game.pieces), [game.pieces]);
   const [stageActive, setStageActive] = useState(false);
+  const [animating, setAnimating] = useState<readonly string[]>([]);
+  // 밖에서 온 자리표시와 무대 스스로 알아낸 것을 합친다. 부모가 값을 안 줘도 무대는 늘 동작한다.
+  const travelling = new Set([...animatingPieceIds, ...animating]);
   const groups = groupPieces(game.pieces);
   const boardGroups = groups.filter((group) => group.status === "BOARD" && group.nodeId);
   const homeGroups = groups.filter((group) => group.status === "HOME");
@@ -156,11 +164,13 @@ export function YutBoard({
     const label = `${controllerName(group, players)} 말 ${count}개 ${groupLocation(group)}`;
     const enabled = Boolean(isCurrentPlayer && game.turnStage === "AWAITING_PIECE" && legalPieceId);
     const slot = sideSlotOf(slots, { teamId: group.teamId, ownerId: group.controllerId });
+    const isTravelling = group.pieces.some((piece) => travelling.has(piece.id));
+    const className = `${sideClass("yut-piece", slot)}${isTravelling ? " yut-piece--travelling" : ""}`;
     return (
       <button
         key={group.key}
         type="button"
-        className={sideClass("yut-piece", slot)}
+        className={className}
         style={group.nodeId ? nodeStyle(group.nodeId) : undefined}
         aria-label={label}
         data-side-slot={slot}
@@ -189,7 +199,7 @@ export function YutBoard({
           slots={slots}
           lastMove={game.lastMove}
           onActive={setStageActive}
-          onAnimating={() => undefined}
+          onAnimating={setAnimating}
         />
         <div className="yut-board__segments" aria-hidden="true">
           {BOARD_SEGMENTS.map((segment) => (

@@ -357,6 +357,8 @@ button, input, select, textarea { min-height: 44px; }
 .yut-piece:disabled { cursor: default; opacity: .68; filter: grayscale(.25); }
 .yut-piece__team, .yut-piece__count { display: block; line-height: 1.05; }
 .yut-piece__count { font-size: .78rem; }
+/* 연출 중인 말의 글자는 감춘다. 버튼은 그대로 있어 클릭과 스크린 리더는 영향이 없다. */
+.yut-piece--travelling { color: transparent; text-shadow: none; }
 .yut-route { position: absolute; left: var(--node-x); top: var(--node-y); min-width: 44px; transform: translate(-50%, calc(-50% + 2.6rem)); z-index: 3; border: 2px solid var(--ink); border-radius: 999px; background: #FFF4A8; color: var(--ink); padding: .35rem .65rem; font-weight: 800; cursor: pointer; }
 .yut-board__racks { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .yut-board__racks section { border: 2px solid #79684F; border-radius: .75rem; padding: .75rem; }
