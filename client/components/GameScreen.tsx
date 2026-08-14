@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { InRoomCommand, PublicRoomSnapshot } from "../../shared/protocol";
 import type { ConnectionState } from "../useGameSession";
+import { newRequestId } from "../requestId";
 import { sideClass, sideName, sideSlotOf, sideSlots } from "../sideColor";
 import { EmojiReactions, type ReactionEvent } from "./EmojiReactions";
 import { EventAnnouncer } from "./EventAnnouncer";
@@ -42,7 +43,7 @@ export function GameScreen({
   const currentPlayer = snapshot.players.find((player) => player.id === game.currentPlayerId);
   // 윷판의 말 색과 참가자 목록의 색을 같은 계산으로 맞춘다.
   const sides = sideSlots(snapshot.players);
-  const metadata = () => ({ roomVersion: snapshot.version, requestId: crypto.randomUUID() });
+  const metadata = () => ({ roomVersion: snapshot.version, requestId: newRequestId() });
   const winnerName = game.winnerId === null
     ? null
     : snapshot.mode === "team"

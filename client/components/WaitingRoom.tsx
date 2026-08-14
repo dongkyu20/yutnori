@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { InRoomCommand, PublicRoomSnapshot, TeamId } from "../../shared/protocol";
+import { newRequestId } from "../requestId";
 import { PlayerRail } from "./PlayerRail";
 
 interface WaitingRoomProps {
@@ -22,7 +23,7 @@ export function WaitingRoom({ snapshot, playerId, sendCommand }: WaitingRoomProp
     snapshot.players.filter((player) => player.teamId === teamId).length,
   ])) as Record<TeamId, number>;
 
-  const metadata = () => ({ roomVersion: snapshot.version, requestId: crypto.randomUUID() });
+  const metadata = () => ({ roomVersion: snapshot.version, requestId: newRequestId() });
 
   const copyRoomCode = async (): Promise<void> => {
     try {
