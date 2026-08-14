@@ -54,6 +54,8 @@ interface MoveChoice {
   markerNodeId: string;
   /** 같은 칸에 닿는 선택지가 여럿일 때 몇 번째인지. 버튼을 그만큼 밀어 겹치지 않게 한다. */
   stack: number;
+  /** 도착 칸에 말이 서 있는지. 서 있으면 그 말의 한가운데를 비켜 놓는다. */
+  onPiece: boolean;
   badge: "잡기" | "완주" | null;
 }
 
@@ -76,6 +78,11 @@ function choicesFor(
   const controllerId = mover.teamId ?? mover.ownerId;
 
   const perNode = new Map<string, number>();
+  // 말이 서 있는 칸에는 표시를 겹쳐 놓지 않는다. 겹치면 그 말을 눌러 고를 수 없다.
+  // 업어 가려고 내 말 위를 목적지로 삼을 때 실제로 일어난다.
+  const occupied = new Set(
+    pieces.flatMap((piece) => (piece.status === "BOARD" && piece.nodeId ? [piece.nodeId] : [])),
+  );
 
   return pendingThrows.flatMap((pending) => {
     const move = pending.moves.find((entry) => entry.pieceId === pieceId);
@@ -94,6 +101,7 @@ function choicesFor(
       trail: move.path.filter((nodeId) => onBoard(nodeId) && nodeId !== move.destinationNodeId),
       markerNodeId,
       stack,
+      onPiece: occupied.has(markerNodeId),
       badge: move.finished ? "완주" : captures ? "잡기" : null,
     }];
   });
@@ -359,7 +367,11 @@ export function YutBoard({
                 type="button"
                 className="yut-choice"
                 // 두 결과가 같은 칸에 닿으면 버튼이 겹치므로 하나씩 밀어 놓는다.
-                style={{ ...nodeStyle(choice.markerNodeId), "--choice-stack": choice.stack } as CSSProperties}
+                style={{
+                  ...nodeStyle(choice.markerNodeId),
+                  "--choice-stack": choice.stack,
+                  "--choice-nudge": choice.onPiece ? "2rem" : "0rem",
+                } as CSSProperties}
                 data-throw-id={choice.throwId}
                 data-destination={choice.markerNodeId}
                 aria-label={choiceLabel(choice, describeNode)}

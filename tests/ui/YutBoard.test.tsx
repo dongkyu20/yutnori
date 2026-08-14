@@ -118,6 +118,89 @@ describe("YutBoard", () => {
     expect(screen.getByRole("button", { name: "B팀 말 1개 바깥 지점 10" })).toBeDisabled();
   });
 
+  it("lets a second board piece take over the choice from the first", async () => {
+    // 판 위에 말이 둘 이상이면 고른 말을 바꿔 가며 갈 곳을 견주게 된다.
+    const user = userEvent.setup();
+    const onSelectMove = vi.fn();
+    const game = createGame({
+      pieces: [
+        { id: "A-1", ownerId: "A", teamId: "A", status: "BOARD", nodeId: "O3", stackSize: 1 },
+        { id: "A-2", ownerId: "A", teamId: "A", status: "BOARD", nodeId: "O8", stackSize: 1 },
+      ],
+      pendingThrows: [{
+        id: "event-1",
+        result: "GAE",
+        legalPieceIds: ["A-1", "A-2"],
+        moves: [
+          { pieceId: "A-1", destinationNodeId: "O5", path: ["O4", "O5"], finished: false },
+          { pieceId: "A-2", destinationNodeId: "O10", path: ["O9", "O10"], finished: false },
+        ],
+      }],
+      legalPieceIds: ["A-1", "A-2"],
+    });
+    render(
+      <YutBoard
+        game={game}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-1", "A-2"]}
+        onSelectMove={onSelectMove}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "A팀 말 1개 바깥 지점 3" }));
+    expect(screen.getByTestId("move-choices")).toHaveTextContent("개");
+
+    await user.click(screen.getByRole("button", { name: "A팀 말 1개 바깥 지점 8" }));
+    const choices = screen.getAllByRole("button", { name: /^개로/ });
+    expect(choices.map((choice) => choice.getAttribute("data-destination"))).toEqual(["O10"]);
+
+    await user.click(choices[0]);
+    expect(onSelectMove).toHaveBeenCalledExactlyOnceWith("event-1", "A-2");
+  });
+
+  it("steps a destination marker aside when a piece already stands there", async () => {
+    // 업으러 갈 때는 목적지에 내 말이 서 있다. 표시가 그 위에 앉으면 그 말을 눌러
+    // 고를 수 없게 된다. 화면에서만 드러나는 겹침이라 자리값으로 지킨다.
+    const user = userEvent.setup();
+    const game = createGame({
+      pieces: [
+        { id: "A-1", ownerId: "A", teamId: "A", status: "BOARD", nodeId: "O3", stackSize: 1 },
+        { id: "A-2", ownerId: "A", teamId: "A", status: "BOARD", nodeId: "O5", stackSize: 1 },
+      ],
+      pendingThrows: [{
+        id: "event-1",
+        result: "GAE",
+        legalPieceIds: ["A-1", "A-2"],
+        moves: [
+          { pieceId: "A-1", destinationNodeId: "O5", path: ["O4", "O5"], finished: false },
+          { pieceId: "A-2", destinationNodeId: "O7", path: ["O6", "O7"], finished: false },
+        ],
+      }],
+      legalPieceIds: ["A-1", "A-2"],
+    });
+    render(
+      <YutBoard
+        game={game}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-1", "A-2"]}
+        onSelectMove={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "A팀 말 1개 바깥 지점 3" }));
+    const onto = screen.getByRole("button", { name: /^개로 바깥 지점 5/ });
+    expect(onto.style.getPropertyValue("--choice-nudge")).toBe("2rem");
+
+    // 빈 칸으로 가는 표시는 칸 위에 그대로 앉는다.
+    await user.click(screen.getByRole("button", { name: "A팀 말 1개 바깥 지점 5" }));
+    const empty = screen.getByRole("button", { name: /^개로 바깥 지점 7/ });
+    expect(empty.style.getPropertyValue("--choice-nudge")).toBe("0rem");
+  });
+
   it("asks for a destination instead of moving as soon as a piece is picked", async () => {
     const user = userEvent.setup();
     const onSelectMove = vi.fn();
