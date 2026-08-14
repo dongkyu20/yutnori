@@ -282,6 +282,39 @@ describe("game reducer", () => {
     expect(toPublicGameState(individualGame()).lastMove).toBeNull();
   });
 
+  it.each([
+    { name: "윷", result: "YUT", distance: 4, prey: "O5" },
+    { name: "모", result: "MO", distance: 5, prey: "O6" },
+  ] as const)("does not add a throw when the capture was made with $name", ({ result, distance, prey }) => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O1", routeId: "OUTER" });
+    state = placePiece(state, "B1-1", { nodeId: prey, routeId: "OUTER" });
+    // 윷·모는 던지는 순간 이미 한 번 더 던지게 해 준다. 그 결과를 손에 들고 다음을 던진다.
+    state = throwYut(state, "A1", result, distance, 1);
+    state = throwYut(state, "A1", "DO", 1);
+
+    const next = movePiece(state, "A1", "A1-1", result);
+
+    expect(next.pieces.find((piece) => piece.id === "B1-1")?.status).toBe("HOME");
+    // 잡긴 했지만 그 몫은 던질 때 이미 받았으므로 더 주지 않는다.
+    expect(next.throwsRemaining).toBe(0);
+    expect(next.turnStage).toBe("AWAITING_PIECE");
+    // 던질 때의 "한 번 더"는 이미 기록에 있다. 잡은 뒤로는 더 붙지 않아야 한다.
+    expect(next.events.at(-1)?.message).toContain("상대 말을 잡았습니다");
+  });
+
+  it("still adds a throw when the capture was made with a plain result", () => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O1", routeId: "OUTER" });
+    state = placePiece(state, "B1-1", { nodeId: "O3", routeId: "OUTER" });
+    state = throwYut(state, "A1", "GAE", 2);
+
+    const next = movePiece(state, "A1", "A1-1");
+
+    expect(next.pieces.find((piece) => piece.id === "B1-1")?.status).toBe("HOME");
+    expect(next.throwsRemaining).toBe(1);
+    expect(next.turnStage).toBe("AWAITING_THROW");
+    expect(next.events.at(-1)?.message).toContain("한 번 더 던집니다");
+  });
+
   it("consumes a no-legal-move back-do and rotates the turn", () => {
     const next = throwYut(individualGame(), "A1", "BACK_DO", -1);
 

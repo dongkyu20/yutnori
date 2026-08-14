@@ -1,5 +1,6 @@
 import type { GameMode, PublicGameState, TeamId } from "../../shared/protocol";
 import { getLegalMoveOptions, getLegalMoves, getLegalPieceIds, movePieces } from "./pieces";
+import { grantsExtraThrow } from "./yut";
 import type {
   GameCommand,
   GameEvent,
@@ -248,12 +249,14 @@ function resolveMove(
   const resolution = movePieces(state.pieces, { pieceId, option });
   const resultName = RESULT_NAMES[pending.result];
   const captured = resolution.capturedPieceIds.length > 0;
+  // 윷·모는 던지는 순간 이미 한 번 더 던지게 해 주었다. 그 결과로 잡았다면 잡기 몫을 또 주지 않는다.
+  const captureBonus = grantsExtraThrow(pending.result) ? 0 : resolution.bonusThrowsEarned;
   const moved = withEvent(
     {
       ...state,
       pieces: resolution.pieces,
       pendingThrows: state.pendingThrows.filter((entry) => entry.id !== pending.id),
-      throwsRemaining: state.throwsRemaining + resolution.bonusThrowsEarned,
+      throwsRemaining: state.throwsRemaining + captureBonus,
     },
     `${state.currentPlayerId}님이 ${resultName}${instrumentParticle(resultName)} `
     + `${captured ? "상대 말을 잡았습니다." : "말을 이동했습니다."}`,
@@ -281,7 +284,7 @@ function resolveMove(
   }
 
   return continueTurn(
-    captured
+    captureBonus > 0
       ? withEvent(afterMove, `${state.currentPlayerId}님이 한 번 더 던집니다.`)
       : afterMove,
   );
