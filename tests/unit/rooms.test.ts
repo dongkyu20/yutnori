@@ -615,6 +615,44 @@ describe("RoomService 말 색 고르기", () => {
     expect(snapshot.phase).toBe("playing");
   });
 
+  it("frees the colour of a player who was removed from the room", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host, guest] = createPlayers(service, "individual", ["Host", "Guest"]);
+
+    let snapshot = dispatch(service, guest.playerId, guest.snapshot, { type: "CHOOSE_COLOR", slot: 1 });
+    snapshot = dispatch(service, host.playerId, snapshot, {
+      type: "KICK_PLAYER",
+      playerId: guest.playerId,
+    });
+    const late = service.joinRoom({ roomCode: snapshot.roomCode, nickname: "Late" });
+
+    // 나간 사람이 쥐고 있던 색까지 잠겨 있으면 색이 네 개뿐이라 금방 바닥난다.
+    const taken = dispatch(service, late.playerId, late.snapshot, { type: "CHOOSE_COLOR", slot: 1 });
+    expect(colourOf(taken, late.playerId)).toBe(1);
+  });
+
+  it("frees a team's colour once the team has nobody left in it", () => {
+    const service = new RoomService(new FakeClock().options());
+    const sessions = createPlayers(service, "team", ["Host", "Mate"]);
+    let snapshot = sessions.at(-1)!.snapshot;
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+      type: "ASSIGN_TEAM", playerId: sessions[0].playerId, teamId: "A",
+    });
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "CHOOSE_COLOR", slot: 2 });
+    expect(colourOf(snapshot, sessions[0].playerId)).toBe(2);
+
+    // A팀을 비우고 B팀으로 옮기면 A팀 색은 주인이 없다. 그대로 두면 아무도 못 쓰는 색이 된다.
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+      type: "ASSIGN_TEAM", playerId: sessions[0].playerId, teamId: "B",
+    });
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+      type: "ASSIGN_TEAM", playerId: sessions[1].playerId, teamId: "C",
+    });
+    const retaken = dispatch(service, sessions[1].playerId, snapshot, { type: "CHOOSE_COLOR", slot: 2 });
+
+    expect(colourOf(retaken, sessions[1].playerId)).toBe(2);
+  });
+
   it("refuses a colour change once the game is under way", () => {
     const service = new RoomService(new FakeClock().options());
     const [host] = readyIndividualGame(service);

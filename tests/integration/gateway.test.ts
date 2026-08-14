@@ -367,6 +367,36 @@ describe("Socket.IO gateway", () => {
     });
   });
 
+  it("passes a refusal's own wording through instead of a generic apology", async () => {
+    const url = await startServer();
+    const { host, guest, snapshot } = await createAndJoin(url);
+
+    const chosen = event<PublicRoomSnapshot>(host, "snapshot");
+    host.emit("command", {
+      type: "CHOOSE_COLOR",
+      slot: 1,
+      roomVersion: snapshot.version,
+      requestId: requestId(1),
+    });
+    const afterChoice = await chosen;
+
+    const refusal = event<ServerError>(guest, "server_error");
+    guest.emit("command", {
+      type: "CHOOSE_COLOR",
+      slot: 1,
+      roomVersion: afterChoice.version,
+      requestId: requestId(2),
+    });
+
+    // 게이트웨이가 코드별 문구를 따로 들고 있으면 새 오류마다 등록을 잊고 뭉개진다.
+    // RoomError가 들고 온 문구가 그대로 나와야 왜 거절됐는지 알 수 있다.
+    expect(await refusal).toEqual({
+      code: "COLOR_TAKEN",
+      message: "이미 다른 참가자가 고른 색입니다.",
+      recoverable: true,
+    });
+  });
+
   it("sanitizes an unexpected room-service exception as a non-recoverable internal error", async () => {
     class FailingRoomService extends RoomService {
       override createRoom(): never {

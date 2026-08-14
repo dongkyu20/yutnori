@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyGameCommand, createGame, endTurn, toPublicGameState } from "../../server/game/reducer";
+import { applyGameCommand, createGame, endTurn, toPublicGameState, MAX_EVENTS } from "../../server/game/reducer";
 import type { GameState, ThrowOutcome } from "../../server/game/types";
 
 const outcome = (
@@ -429,6 +429,33 @@ describe("game reducer", () => {
 
     expect(next.winnerId).toBe("A");
     expect(next.turnStage).toBe("COMPLETE");
+  });
+
+  it("keeps the log from growing without bound, and still gives every event its own id", () => {
+    // 기록은 스냅숏마다 통째로 실려 나가므로 한 판 내내 쌓게 두면 안 된다.
+    // 다만 id를 배열 길이에서 뽑고 있어, 잘라내면 예전 id가 다시 나온다.
+    // 그러면 던지기·이동 연출이 "이미 본 것"으로 오인해 재생되지 않는다.
+    let state = individualGame();
+    const seen = new Set<string>();
+    for (let step = 0; step < 300; step += 1) {
+      if (state.turnStage === "AWAITING_THROW") {
+        state = throwYut(state, state.currentPlayerId, "DO", 1);
+      } else if (state.turnStage === "AWAITING_PIECE") {
+        state = movePiece(state, state.currentPlayerId, state.legalPieceIds[0]);
+      } else {
+        break;
+      }
+      state.events.forEach((event) => seen.add(event.id));
+    }
+
+    expect(state.events.length).toBeLessThanOrEqual(MAX_EVENTS);
+    // 남아 있는 기록끼리도, 지나간 것과도 id가 겹치지 않는다.
+    const ids = state.events.map((event) => event.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(seen.size).toBeGreaterThan(MAX_EVENTS);
+    // 시간 순서도 유지된다.
+    const stamps = state.events.map((event) => event.createdAt);
+    expect([...stamps].sort((left, right) => left - right)).toEqual(stamps);
   });
 
   it("publishes each held result with the pieces it can move", () => {

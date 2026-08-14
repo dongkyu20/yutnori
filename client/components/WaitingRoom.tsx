@@ -1,19 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import type { InRoomCommand, PublicRoomSnapshot, TeamId } from "../../shared/protocol";
+import type { InRoomCommand, PublicRoomSnapshot, ServerError, TeamId } from "../../shared/protocol";
 import { newRequestId } from "../requestId";
 import { PlayerRail } from "./PlayerRail";
+import { RoomAlert } from "./RoomAlert";
 
 interface WaitingRoomProps {
   snapshot: PublicRoomSnapshot;
   playerId: string | null;
+  /** 서버가 방금 거절한 명령이 있으면 그 까닭. */
+  error?: ServerError | null;
   sendCommand: (command: InRoomCommand) => void;
 }
 
 const TEAM_IDS: TeamId[] = ["A", "B", "C", "D"];
 
-export function WaitingRoom({ snapshot, playerId, sendCommand }: WaitingRoomProps) {
+export function WaitingRoom({ snapshot, playerId, error = null, sendCommand }: WaitingRoomProps) {
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const isHost = playerId === snapshot.hostPlayerId;
@@ -70,6 +73,8 @@ export function WaitingRoom({ snapshot, playerId, sendCommand }: WaitingRoomProp
         {copied && <p className="waiting-room__status" role="status">방 코드가 복사되었습니다.</p>}
         {copyError && <p className="waiting-room__status waiting-room__status--error" role="alert">방 코드를 직접 복사해주세요.</p>}
       </header>
+
+      <RoomAlert error={error} />
 
       {snapshot.mode === "individual" ? renderPlayers(snapshot.players) : (
         <section className="waiting-room__teams" aria-label="팀 구성">

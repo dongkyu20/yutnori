@@ -15,6 +15,7 @@ export function GameApp() {
       <WaitingRoom
         snapshot={session.snapshot}
         playerId={session.playerId}
+        error={session.error}
         sendCommand={session.sendCommand}
       />
     );
@@ -26,6 +27,7 @@ export function GameApp() {
       playerId={session.playerId}
       connectionState={session.connectionState}
       reactions={session.reactions}
+      error={session.error}
       sendCommand={session.sendCommand}
       leaveRoom={session.leaveRoom}
     />

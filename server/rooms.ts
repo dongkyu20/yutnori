@@ -327,6 +327,8 @@ export class RoomService {
         this.assertWaiting(room);
         this.assertHost(room, actor.id);
         this.assignTeam(room, command.playerId, command.teamId);
+        // 옮기고 나서 빈 팀이 생겼으면 그 팀이 쥐고 있던 색을 놓아준다.
+        this.releaseOrphanedColors(room);
         return;
       case "KICK_PLAYER":
         this.assertWaiting(room);
@@ -425,6 +427,7 @@ export class RoomService {
     const [removed] = room.players.splice(index, 1);
     this.sessions.delete(removed.reconnectTokenHash);
     this.playerRooms.delete(removed.id);
+    this.releaseOrphanedColors(room);
   }
 
   private startGame(room: Room): void {
@@ -532,6 +535,22 @@ export class RoomService {
       }
     }
     room.colorChoices.set(controllerId, slot);
+  }
+
+  /**
+   * 주인이 사라진 색을 놓아준다. 내보내거나 팀을 옮겨 팀이 비면 그 색을 쥔 사람이 없어지는데,
+   * 그대로 두면 아무도 고를 수 없는 색이 되어 넷뿐인 색이 금방 바닥난다.
+   */
+  private releaseOrphanedColors(room: Room): void {
+    const held = new Set(
+      room.players.flatMap((player) => {
+        const controllerId = room.mode === "team" ? player.teamId : player.id;
+        return controllerId ? [controllerId] : [];
+      }),
+    );
+    for (const controllerId of [...room.colorChoices.keys()]) {
+      if (!held.has(controllerId)) room.colorChoices.delete(controllerId);
+    }
   }
 
   /** 게임을 시작할 때 아직 색이 없는 주체에게 남은 색을 앞에서부터 준다. */

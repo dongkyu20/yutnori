@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { InRoomCommand, PublicRoomSnapshot } from "../../shared/protocol";
+import type { InRoomCommand, PublicRoomSnapshot, ServerError } from "../../shared/protocol";
 import type { ConnectionState } from "../useGameSession";
 import { newRequestId } from "../requestId";
 import { sideClass, sideName, sideSlotOf, sideSlots } from "../sideColor";
 import { EmojiReactions, type ReactionEvent } from "./EmojiReactions";
 import { EventAnnouncer } from "./EventAnnouncer";
 import { ResultDialog } from "./ResultDialog";
+import { RoomAlert } from "./RoomAlert";
 import { TurnPanel } from "./TurnPanel";
 import { YutBoard } from "./YutBoard";
 
@@ -16,6 +17,8 @@ interface GameScreenProps {
   playerId: string | null;
   connectionState?: ConnectionState;
   reactions?: readonly ReactionEvent[];
+  /** 서버가 방금 거절한 명령이 있으면 그 까닭. */
+  error?: ServerError | null;
   sendCommand: (command: InRoomCommand) => void;
   leaveRoom?: () => void;
 }
@@ -33,6 +36,7 @@ export function GameScreen({
   playerId,
   connectionState = "connected",
   reactions = [],
+  error = null,
   sendCommand,
   leaveRoom = NOOP,
 }: GameScreenProps) {
@@ -68,6 +72,7 @@ export function GameScreen({
       >
         {CONNECTION_MESSAGES[connectionState]}
       </p>
+      <RoomAlert error={error} />
 
       <div className="game-screen__layout">
         <aside className="game-screen__players">

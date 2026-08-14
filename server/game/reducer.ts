@@ -3,7 +3,6 @@ import { getLegalMoveOptions, getLegalMoves, getLegalPieceIds, movePieces } from
 import { grantsExtraThrow } from "./yut";
 import type {
   GameCommand,
-  GameEvent,
   GamePlayer,
   GameState,
   MoveOption,
@@ -92,6 +91,7 @@ export function createGame(input: CreateGameInput): GameState {
     throwsRemaining: THROWS_PER_TURN,
     winnerId: null,
     events: [],
+    eventSequence: 0,
   };
 }
 
@@ -103,13 +103,20 @@ function currentController(state: GameState): PieceController {
   return { ownerId: player.id, teamId: player.teamId };
 }
 
-function nextEvent(events: readonly GameEvent[], message: string): GameEvent {
-  const sequence = events.length + 1;
-  return { id: `event-${sequence}`, message, createdAt: sequence };
-}
+/**
+ * 기록은 스냅숏마다 통째로 실려 나간다. 한 판 내내 쌓으면 행동 한 번마다 전원에게
+ * 수백 줄을 다시 보내게 되므로 최근 것만 남긴다. 화면에 보이는 것은 마지막 한 줄뿐이다.
+ */
+export const MAX_EVENTS = 50;
 
 function withEvent(state: GameState, message: string): GameState {
-  return { ...state, events: [...state.events, nextEvent(state.events, message)] };
+  const sequence = state.eventSequence + 1;
+  const events = [...state.events, { id: `event-${sequence}`, message, createdAt: sequence }];
+  return {
+    ...state,
+    eventSequence: sequence,
+    events: events.length > MAX_EVENTS ? events.slice(-MAX_EVENTS) : events,
+  };
 }
 
 function clearedTurnSelection(state: GameState): GameState {

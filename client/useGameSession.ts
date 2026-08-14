@@ -7,9 +7,9 @@ import type {
   PublicRoomSnapshot,
   ServerError,
 } from "../shared/protocol";
+import { clearReconnectToken, readReconnectToken, writeReconnectToken } from "./reconnectToken";
 import { createGameSocket, type GameSocket, type ReactionEvent } from "./socket";
 
-const RECONNECT_TOKEN_KEY = "hanpanyut.reconnectToken";
 const TERMINAL_SESSION_ERROR_CODES = new Set([
   "ROOM_NOT_FOUND",
   "SESSION_NOT_FOUND",
@@ -45,7 +45,7 @@ function offlineError(): ServerError {
 
 function initialConnectionState(): ConnectionState {
   if (typeof window === "undefined") return "connecting";
-  return window.localStorage.getItem(RECONNECT_TOKEN_KEY) ? "reconnecting" : "connecting";
+  return readReconnectToken() ? "reconnecting" : "connecting";
 }
 
 export function useGameSession(options: UseGameSessionOptions = {}): GameSession {
@@ -61,7 +61,7 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
 
   useEffect(() => {
     const reactionTimers = reactionTimersRef.current;
-    const reconnectToken = window.localStorage.getItem(RECONNECT_TOKEN_KEY);
+    const reconnectToken = readReconnectToken();
     const socket = socketFactory(reconnectToken);
     socketRef.current = socket;
 
@@ -82,16 +82,20 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
       );
     });
     socket.on("session", (session) => {
-      window.localStorage.setItem(RECONNECT_TOKEN_KEY, session.reconnectToken);
+      writeReconnectToken(session.reconnectToken);
       setPlayerId(session.playerId);
       setError(null);
     });
     socket.on("snapshot", (nextSnapshot) => {
-      setSnapshot((currentSnapshot) => (
-        currentSnapshot === null || nextSnapshot.version >= currentSnapshot.version
-          ? nextSnapshot
-          : currentSnapshot
-      ));
+      setSnapshot((currentSnapshot) => {
+        if (currentSnapshot !== null && nextSnapshot.version < currentSnapshot.version) {
+          return currentSnapshot;
+        }
+        // 방이 앞으로 나아갔다는 것은 누군가의 명령이 통했다는 뜻이다.
+        // 조금 전 거절 문구를 계속 붙여 두면 무엇이 지금 잘못된 것인지 알 수 없다.
+        setError(null);
+        return nextSnapshot;
+      });
     });
     socket.on("reaction", (payload) => {
       const reaction = { id: nextReactionIdRef.current++, ...payload };
@@ -105,7 +109,7 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
     socket.on("server_error", (nextError) => {
       setError(nextError);
       if (TERMINAL_SESSION_ERROR_CODES.has(nextError.code)) {
-        window.localStorage.removeItem(RECONNECT_TOKEN_KEY);
+        clearReconnectToken();
         setPlayerId(null);
         setSnapshot(null);
         socket.auth = {};
@@ -150,7 +154,7 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
   }, [emit]);
 
   const leaveRoom = useCallback((): void => {
-    window.localStorage.removeItem(RECONNECT_TOKEN_KEY);
+    clearReconnectToken();
     for (const timer of reactionTimersRef.current.values()) window.clearTimeout(timer);
     reactionTimersRef.current.clear();
     setPlayerId(null);

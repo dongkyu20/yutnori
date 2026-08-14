@@ -27,28 +27,6 @@ const DEFAULT_RATE_LIMIT = {
   now: Date.now,
 } satisfies GatewayRateLimitOptions;
 
-const ERROR_MESSAGES: Readonly<Record<string, string>> = {
-  ROOM_NOT_FOUND: "방을 찾을 수 없습니다.",
-  GAME_ALREADY_STARTED: "이미 시작된 게임입니다.",
-  GAME_NOT_PLAYING: "진행 중인 게임이 아닙니다.",
-  ROOM_NOT_WAITING: "대기 중인 방에서만 수행할 수 있습니다.",
-  ROOM_FULL: "방이 가득 찼습니다.",
-  NICKNAME_TAKEN: "이미 사용 중인 닉네임입니다.",
-  SESSION_NOT_FOUND: "재접속 세션을 찾을 수 없습니다.",
-  PLAYER_DISCONNECTED: "연결된 참가자만 행동할 수 있습니다.",
-  STALE_VERSION: "오래된 방 버전입니다.",
-  WRONG_MODE: "팀전에서만 팀을 배정할 수 있습니다.",
-  PLAYER_NOT_FOUND: "참가자를 찾을 수 없습니다.",
-  TEAM_FULL: "한 팀에는 두 명까지만 배정할 수 있습니다.",
-  HOST_CANNOT_KICK_SELF: "방장은 자신을 내보낼 수 없습니다.",
-  NOT_ENOUGH_PLAYERS: "개인전에는 두 명 이상이 필요합니다.",
-  INVALID_TEAM_COMPOSITION: "각 팀에 두 명이 필요합니다.",
-  PLAYERS_NOT_READY: "모든 참가자가 준비해야 합니다.",
-  HOST_ONLY: "방장만 수행할 수 있습니다.",
-  ROOM_CODE_EXHAUSTED: "방 코드를 생성할 수 없습니다.",
-  INVALID_ACTION: "현재 상태에서 수행할 수 없는 행동입니다.",
-};
-
 interface SocketData {
   playerId?: string;
   roomCode?: string;
@@ -127,9 +105,11 @@ function consumeQuota(
 
 function mapError(error: unknown): ServerError {
   if (error instanceof RoomError) {
+    // RoomError가 이미 사람이 읽을 한국어 문구를 들고 온다. 여기서 표를 따로 두면
+    // 새 오류를 만들 때마다 등록을 잊게 되고, 잊은 것은 "요청을 처리할 수 없습니다"로 뭉개진다.
     return {
       code: error.code,
-      message: ERROR_MESSAGES[error.code] ?? "요청을 처리할 수 없습니다.",
+      message: error.message,
       recoverable: error.recoverable,
     };
   }

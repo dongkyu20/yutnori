@@ -99,6 +99,12 @@ export interface GameState {
   throwsRemaining: number;
   winnerId: string | null;
   events: GameEvent[];
+  /**
+   * 지금까지 기록한 사건 수. 기록은 잘라내지만 id는 계속 자라야 한다.
+   * 배열 길이에서 id를 뽑으면 잘라낸 뒤 예전 id가 다시 나오고,
+   * 던지기와 이동 연출이 그 id를 "이미 본 것"으로 여겨 재생하지 않는다.
+   */
+  eventSequence: number;
 }
 
 export type GameCommand =

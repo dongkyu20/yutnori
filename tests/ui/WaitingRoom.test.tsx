@@ -48,6 +48,28 @@ describe("WaitingRoom", () => {
     vi.unstubAllGlobals();
   });
 
+  it("shows why the server refused a command, and nothing when it refused none", () => {
+    // 거절 사유를 서버만 알고 화면은 조용하면, 색을 고른 사람은 눌러도 아무 일도
+    // 일어나지 않는 것으로 본다. 무엇을 다시 해야 하는지 알 길이 없다.
+    const { rerender } = render(
+      <WaitingRoom snapshot={createSnapshot()} playerId="host" sendCommand={() => {}} />,
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    rerender(
+      <WaitingRoom
+        snapshot={createSnapshot()}
+        playerId="host"
+        error={{ code: "COLOR_TAKEN", message: "이미 다른 참가자가 고른 색입니다.", recoverable: true }}
+        sendCommand={() => {}}
+      />,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("이미 다른 참가자가 고른 색입니다.");
+    expect(alert).toHaveAttribute("data-error-code", "COLOR_TAKEN");
+  });
+
   it("renders individual occupancy and each player's connected ready status", () => {
     renderWaitingRoom(createSnapshot({
       players: [
