@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import { NODE_COORDINATES } from "../../client/boardLayout";
+import { FIRST_STEP_NODE_ID, NODE_COORDINATES, SHORTCUT_GATES, START_NODE_ID } from "../../client/boardLayout";
 import {
   createBoardScene,
   frameBoardCamera,
@@ -53,5 +53,58 @@ describe("3D 윷판", () => {
     board.disposables.forEach((item) => { expect(typeof item.dispose).toBe("function"); });
     // 칸마다 표식이 하나씩 있어야 한다.
     expect(board.nodeCount).toBe(Object.keys(NODE_COORDINATES).length);
+  });
+});
+
+describe("살촉 방향", () => {
+  it("aims every arrowhead at its shortcut (or the first step) target", () => {
+    const board = createBoardScene(THREE);
+    board.scene.updateMatrixWorld(true);
+
+    // addArrows가 만드는 살촉은 시작점 하나와 SHORTCUT_GATES 개수만큼.
+    const expected: Array<{ nodeId: string; toward: string }> = [
+      { nodeId: START_NODE_ID, toward: FIRST_STEP_NODE_ID },
+      ...Object.entries(SHORTCUT_GATES).map(([nodeId, toward]) => ({ nodeId, toward })),
+    ];
+
+    // 살촉은 원뿔(ConeGeometry) 메시로만 그려진다. 칸 표식은 원기둥/토러스라 걸러진다.
+    const coneMeshes: THREE.Mesh[] = [];
+    board.scene.traverse((object) => {
+      if (object instanceof THREE.Mesh && object.geometry instanceof THREE.ConeGeometry) {
+        coneMeshes.push(object);
+      }
+    });
+    expect(coneMeshes.length).toBe(expected.length);
+
+    expected.forEach(({ nodeId, toward }) => {
+      const at = nodeWorldPosition(nodeId);
+      const atVec = new THREE.Vector3(at.x, at.y, at.z);
+
+      // 어느 살촉이 이 칸 것인지는 위치로 찾는다: 오프셋이 인접 칸 간격보다 짧으므로
+      // "at"에 가장 가까운 원뿔이 바로 그 칸의 살촉이다.
+      let closest: THREE.Mesh | undefined;
+      let closestDistance = Infinity;
+      coneMeshes.forEach((mesh) => {
+        const worldPosition = new THREE.Vector3();
+        mesh.getWorldPosition(worldPosition);
+        const distance = worldPosition.distanceTo(atVec);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closest = mesh;
+        }
+      });
+      expect(closest).toBeDefined();
+
+      const target = nodeWorldPosition(toward);
+      const wanted = new THREE.Vector3(target.x - at.x, 0, target.z - at.z).normalize();
+
+      // 원뿔은 rotateX(PI/2) 이후 +Z를 향한다. 그 축을 메시의 월드 회전으로 돌린 것이
+      // 실제로 살촉이 가리키는 방향이다.
+      const quaternion = new THREE.Quaternion();
+      closest!.getWorldQuaternion(quaternion);
+      const actual = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion).normalize();
+
+      expect(wanted.angleTo(actual)).toBeCloseTo(0, 5);
+    });
   });
 });

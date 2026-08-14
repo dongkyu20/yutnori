@@ -140,7 +140,10 @@ function addArrows(
     const distance = NODE_RADIUS * 1.75;
     const mesh = new THREE.Mesh(head, start ? startMaterial : material);
     mesh.position.set(at.x + Math.cos(angle) * distance, NODE_HEIGHT, at.z + Math.sin(angle) * distance);
-    mesh.rotation.y = -angle;
+    // head는 rotateX(PI/2) 때문에 로컬 +Z를 바라본다. angle은 +X축 기준으로 잰 각이므로
+    // 그대로 -angle을 넣으면 +X를 바라보게 돌아 항상 90도가 어긋난다.
+    // +Z가 기준이 되도록 90도(PI/2)를 더 얹어야 목표 방향과 맞는다.
+    mesh.rotation.y = Math.PI / 2 - angle;
     scene.add(mesh);
   });
 }
