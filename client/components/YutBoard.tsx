@@ -16,6 +16,10 @@ import { BoardStage } from "./BoardStage";
 
 type Piece = PublicGameState["pieces"][number];
 
+const RESULT_NAMES: Record<NonNullable<PublicGameState["lastThrow"]>["result"], string> = {
+  BACK_DO: "빽도", DO: "도", GAE: "개", GEOL: "걸", YUT: "윷", MO: "모",
+};
+
 interface PieceGroup {
   key: string;
   pieces: Piece[];
@@ -25,51 +29,81 @@ interface PieceGroup {
   teamId?: TeamId;
 }
 
-type PreviewMove = PublicGameState["pendingThrows"][number]["moves"][number];
+type PendingThrow = PublicGameState["pendingThrows"][number];
 
 interface YutBoardProps {
   game: PublicGameState;
   players: PublicRoomSnapshot["players"];
   playerId: string | null;
-  /** 지금 고른 윷 결과로 움직일 수 있는 말. */
+  /** 손에 든 어느 결과로든 움직일 수 있는 말. */
   legalPieceIds: readonly string[];
-  /** 지금 고른 결과로 각 말이 갈 곳. 말에 마우스를 올리거나 초점을 주면 미리 보여 준다. */
-  previewMoves?: readonly PreviewMove[];
-  onSelectPiece: (pieceId: string) => void;
+  /** 말과 결과를 함께 정해 서버에 보낸다. */
+  onSelectMove: (throwId: string, pieceId: string) => void;
   onSelectRoute: (routeId: string) => void;
   /** 지금 연출 중인 말. 이 말의 글자는 3D 말과 어긋나므로 감춘다. */
   animatingPieceIds?: readonly string[];
 }
 
-interface Preview {
+/** 고른 말이 결과 하나로 갈 수 있는 곳. 판 위에 버튼 하나로 뜬다. */
+interface MoveChoice {
+  throwId: string;
+  resultName: string;
   /** 밟고 지나갈 칸. 도착 칸은 뺀다. */
   trail: string[];
-  /** 도착 표시를 놓을 칸. 참으로 나면 좌표가 없으므로 시작점 모서리에 놓는다. */
+  /** 표시를 놓을 칸. 참으로 나면 좌표가 없으므로 시작점 모서리에 놓는다. */
   markerNodeId: string;
+  /** 같은 칸에 닿는 선택지가 여럿일 때 몇 번째인지. 버튼을 그만큼 밀어 겹치지 않게 한다. */
+  stack: number;
   badge: "잡기" | "완주" | null;
 }
 
+function onBoard(nodeId: string): boolean {
+  return NODE_COORDINATES[nodeId] !== undefined;
+}
+
 /**
- * 미리 보기를 화면에 놓을 수 있는 모양으로 바꾼다.
+ * 고른 말이 갈 수 있는 곳을 결과마다 하나씩 모은다.
  * 잡을 수 있는지는 서버가 따로 보내 주지 않아도 된다. 도착 칸에 남의 말이 서 있는지 보면 안다.
  */
-function previewOf(
-  move: PreviewMove,
-  controllerId: string,
+function choicesFor(
+  pieceId: string | null,
+  pendingThrows: readonly PendingThrow[],
   pieces: readonly Piece[],
-): Preview {
-  const onBoard = (nodeId: string) => NODE_COORDINATES[nodeId] !== undefined;
-  const trail = move.path.filter((nodeId) => onBoard(nodeId) && nodeId !== move.destinationNodeId);
-  const captures = !move.finished && pieces.some((piece) =>
-    piece.status === "BOARD"
-    && piece.nodeId === move.destinationNodeId
-    && (piece.teamId ?? piece.ownerId) !== controllerId);
+): MoveChoice[] {
+  if (!pieceId) return [];
+  const mover = pieces.find((piece) => piece.id === pieceId);
+  if (!mover) return [];
+  const controllerId = mover.teamId ?? mover.ownerId;
 
-  return {
-    trail,
-    markerNodeId: onBoard(move.destinationNodeId) ? move.destinationNodeId : START_NODE_ID,
-    badge: move.finished ? "완주" : captures ? "잡기" : null,
-  };
+  const perNode = new Map<string, number>();
+
+  return pendingThrows.flatMap((pending) => {
+    const move = pending.moves.find((entry) => entry.pieceId === pieceId);
+    if (!move) return [];
+    const captures = !move.finished && pieces.some((piece) =>
+      piece.status === "BOARD"
+      && piece.nodeId === move.destinationNodeId
+      && (piece.teamId ?? piece.ownerId) !== controllerId);
+    const markerNodeId = onBoard(move.destinationNodeId) ? move.destinationNodeId : START_NODE_ID;
+    const stack = perNode.get(markerNodeId) ?? 0;
+    perNode.set(markerNodeId, stack + 1);
+
+    return [{
+      throwId: pending.id,
+      resultName: RESULT_NAMES[pending.result],
+      trail: move.path.filter((nodeId) => onBoard(nodeId) && nodeId !== move.destinationNodeId),
+      markerNodeId,
+      stack,
+      badge: move.finished ? "완주" : captures ? "잡기" : null,
+    }];
+  });
+}
+
+/** 갈 곳 버튼을 소리로 읽는 말. 참으로 나는 선택지는 빌려 쓴 칸 이름을 읽으면 안 된다. */
+function choiceLabel(choice: MoveChoice, describe: (nodeId: string) => string): string {
+  const where = choice.badge === "완주" ? "완주" : describe(choice.markerNodeId);
+  const extra = choice.badge === "잡기" ? ", 상대 말을 잡습니다" : "";
+  return `${choice.resultName}로 ${where}${extra}`;
 }
 
 function nodeStyle(nodeId: string): CSSProperties {
@@ -177,8 +211,7 @@ export function YutBoard({
   players,
   playerId,
   legalPieceIds,
-  previewMoves = [],
-  onSelectPiece,
+  onSelectMove,
   onSelectRoute,
   animatingPieceIds = [],
 }: YutBoardProps) {
@@ -189,15 +222,23 @@ export function YutBoard({
   const slots = useMemo(() => sideSlots(game.pieces), [game.pieces]);
   const [stageActive, setStageActive] = useState(false);
   const [animating, setAnimating] = useState<readonly string[]>([]);
-  // 마우스를 올렸거나 초점을 받은 말. 마우스만으로는 키보드 사용자가 미리 보기를 못 쓴다.
+  // 고른 말. 이것이 정해져야 갈 곳이 판에 뜬다.
+  const [chosenPieceId, setChosenPieceId] = useState<string | null>(null);
+  // 아직 고르지 않았을 때 마우스나 초점만으로 미리 보여 주는 말.
   const [previewPieceId, setPreviewPieceId] = useState<string | null>(null);
   // 밖에서 온 자리표시와 무대 스스로 알아낸 것을 합친다. 부모가 값을 안 줘도 무대는 늘 동작한다.
   const travelling = new Set([...animatingPieceIds, ...animating]);
-  const previewMove = previewMoves.find((move) => move.pieceId === previewPieceId);
-  const previewPiece = game.pieces.find((piece) => piece.id === previewPieceId);
-  const preview = previewMove && previewPiece
-    ? previewOf(previewMove, previewPiece.teamId ?? previewPiece.ownerId, game.pieces)
+
+  // 고른 말이 사라지거나 차례가 넘어가면 선택을 놓는다.
+  const choosable = isCurrentPlayer && game.turnStage === "AWAITING_PIECE";
+  const activePieceId = choosable && chosenPieceId && legalPieces.has(chosenPieceId)
+    ? chosenPieceId
     : null;
+  const choices = choicesFor(activePieceId, game.pendingThrows, game.pieces);
+  // 고르기 전에는 흐리게, 고른 뒤에는 누를 수 있는 버튼으로 같은 자리를 보여 준다.
+  const previewChoices = activePieceId
+    ? []
+    : choicesFor(choosable ? previewPieceId : null, game.pendingThrows, game.pieces);
   const groups = groupPieces(game.pieces);
   const boardGroups = groups.filter((group) => group.status === "BOARD" && group.nodeId);
   const homeGroups = groups.filter((group) => group.status === "HOME");
@@ -207,10 +248,13 @@ export function YutBoard({
     const legalPieceId = group.pieces.find((piece) => legalPieces.has(piece.id))?.id;
     const count = Math.max(group.pieces.length, group.pieces[0]?.stackSize ?? 1);
     const label = `${controllerName(group, players)} 말 ${count}개 ${groupLocation(group)}`;
-    const enabled = Boolean(isCurrentPlayer && game.turnStage === "AWAITING_PIECE" && legalPieceId);
+    const enabled = Boolean(choosable && legalPieceId);
+    const chosen = Boolean(legalPieceId && legalPieceId === activePieceId);
     const slot = sideSlotOf(slots, { teamId: group.teamId, ownerId: group.controllerId });
     const isTravelling = group.pieces.some((piece) => travelling.has(piece.id));
-    const className = `${sideClass("yut-piece", slot)}${isTravelling ? " yut-piece--travelling" : ""}`;
+    const className = `${sideClass("yut-piece", slot)}`
+      + `${isTravelling ? " yut-piece--travelling" : ""}`
+      + `${chosen ? " yut-piece--chosen" : ""}`;
     return (
       <button
         key={group.key}
@@ -218,13 +262,18 @@ export function YutBoard({
         className={className}
         style={group.nodeId ? nodeStyle(group.nodeId) : undefined}
         aria-label={label}
+        aria-pressed={enabled ? chosen : undefined}
         data-side-slot={slot}
         data-piece-ids={group.pieces.map((piece) => piece.id).sort().join(",")}
         data-piece-status={group.status}
         data-node-id={group.nodeId}
         data-controller-id={group.controllerId}
         disabled={!enabled}
-        onClick={() => { if (enabled && legalPieceId) onSelectPiece(legalPieceId); }}
+        // 누르면 고르기만 한다. 실제 이동은 판에 뜬 갈 곳을 눌러야 일어난다.
+        onClick={() => {
+          if (!enabled || !legalPieceId) return;
+          setChosenPieceId(chosen ? null : legalPieceId);
+        }}
         onPointerEnter={() => { if (enabled && legalPieceId) setPreviewPieceId(legalPieceId); }}
         onPointerLeave={() => setPreviewPieceId(null)}
         onFocus={() => { if (enabled && legalPieceId) setPreviewPieceId(legalPieceId); }}
@@ -279,26 +328,49 @@ export function YutBoard({
             );
           })}
         </ol>
-        {preview && (
+        {previewChoices.length > 0 && (
           <div className="yut-preview" data-testid="move-preview" aria-hidden="true">
-            {preview.trail.map((nodeId) => (
+            {previewChoices.flatMap((choice) => choice.trail.map((nodeId) => (
               <span
-                key={nodeId}
+                key={`${choice.throwId}:${nodeId}`}
                 className="yut-preview__step"
                 data-preview-step={nodeId}
                 style={nodeStyle(nodeId)}
               />
+            )))}
+            {previewChoices.map((choice) => (
+              <span
+                key={choice.throwId}
+                className="yut-preview__goal"
+                data-preview-goal={choice.markerNodeId}
+                style={nodeStyle(choice.markerNodeId)}
+              >
+                {choice.badge && <span className="yut-preview__badge">{choice.badge}</span>}
+              </span>
             ))}
-            <span
-              className="yut-preview__goal"
-              data-preview-goal={preview.markerNodeId}
-              style={nodeStyle(preview.markerNodeId)}
-            >
-              {preview.badge && <span className="yut-preview__badge">{preview.badge}</span>}
-            </span>
           </div>
         )}
         <div className="yut-board__pieces">{boardGroups.map(renderPiece)}</div>
+        {choices.length > 0 && activePieceId && (
+          <div className="yut-choices" data-testid="move-choices">
+            {choices.map((choice) => (
+              <button
+                key={choice.throwId}
+                type="button"
+                className="yut-choice"
+                // 두 결과가 같은 칸에 닿으면 버튼이 겹치므로 하나씩 밀어 놓는다.
+                style={{ ...nodeStyle(choice.markerNodeId), "--choice-stack": choice.stack } as CSSProperties}
+                data-throw-id={choice.throwId}
+                data-destination={choice.markerNodeId}
+                aria-label={choiceLabel(choice, describeNode)}
+                onClick={() => onSelectMove(choice.throwId, activePieceId)}
+              >
+                <span className="yut-choice__result">{choice.resultName}</span>
+                {choice.badge && <span className="yut-choice__badge">{choice.badge}</span>}
+              </button>
+            ))}
+          </div>
+        )}
         {game.turnStage === "AWAITING_ROUTE" && game.legalRoutes.map((route) => (
           <button
             key={route.routeId}

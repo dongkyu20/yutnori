@@ -67,7 +67,7 @@ describe("BoardStage", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={[]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -108,7 +108,7 @@ describe("BoardStage", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={[]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
         animatingPieceIds={["a-1"]}
       />,
@@ -125,7 +125,7 @@ describe("BoardStage", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={[]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
         animatingPieceIds={[]}
       />,

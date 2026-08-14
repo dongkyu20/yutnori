@@ -439,14 +439,37 @@ button, input, select, textarea { min-height: 44px; }
 .pending-throws { display: grid; gap: .6rem; }
 .pending-throws h3 { margin: 0; font-size: .8rem; font-weight: 900; letter-spacing: .14em; color: var(--muted-ink); }
 .pending-throws__list { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+/* 무엇을 들고 있는지 보여 주기만 한다. 고르는 일은 판에서 한다. */
 .pending-throw {
+  display: grid; place-items: center;
   min-width: 3.25rem; min-height: 2.75rem;
   border: 2px solid var(--ink); border-radius: .65rem;
   background: var(--paper); color: var(--ink);
-  padding: .35rem .8rem; font-size: 1rem; font-weight: 900; cursor: pointer;
+  padding: .35rem .8rem; font-size: 1rem; font-weight: 900;
 }
-.pending-throw[aria-pressed="true"] { background: var(--gold); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 45%, transparent); }
-.pending-throw:disabled { opacity: .45; cursor: not-allowed; }
+.pending-throw--idle { opacity: .45; }
+
+/* 고른 말이 갈 수 있는 곳. 결과 이름을 달고 판 위에 선다. */
+.yut-choices { position: absolute; inset: 0; z-index: 4; }
+.yut-choice {
+  position: absolute; left: var(--node-x); top: var(--node-y);
+  display: grid; place-items: center; gap: .1rem;
+  min-width: 44px; min-height: 44px;
+  /* 같은 칸에 여럿이면 하나씩 아래로 밀어 겹치지 않게 한다. */
+  transform: translate(-50%, calc(-50% + var(--choice-stack, 0) * 2.9rem));
+  border: 3px solid var(--ink); border-radius: 999px;
+  background: var(--gold); color: var(--ink);
+  padding: .2rem .55rem; font-weight: 900; cursor: pointer;
+  box-shadow: 0 3px 0 var(--ink), 0 0 0 4px color-mix(in srgb, var(--gold) 40%, transparent);
+  animation: choice-pop .16s ease-out both;
+}
+.yut-choice:hover { background: color-mix(in srgb, var(--gold) 78%, var(--paper)); }
+.yut-choice__result { font-size: 1.05rem; line-height: 1; }
+.yut-choice__badge { font-size: .62rem; line-height: 1; letter-spacing: .02em; }
+.yut-piece--chosen { box-shadow: 0 0 0 4px var(--jade), 0 2px 0 var(--ink); }
+@keyframes choice-pop {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + var(--choice-stack, 0) * 2.9rem)) scale(.8); }
+}
 
 .turn-panel__throw { width: 100%; min-height: 3.25rem; border: 2px solid var(--ink); border-radius: .75rem; background: var(--jade); color: #FFF; font-size: 1.05rem; font-weight: 900; cursor: pointer; }
 .turn-panel__throw:disabled { background: #767676; cursor: not-allowed; }

@@ -36,15 +36,9 @@ export function GameScreen({
   leaveRoom = NOOP,
 }: GameScreenProps) {
   const [playersOpen, setPlayersOpen] = useState(true);
-  const [preferredThrowId, setPreferredThrowId] = useState<string | null>(null);
   const game = snapshot.game;
   if (!game) return <main><p role="alert">게임 정보를 불러오지 못했습니다.</p></main>;
 
-  // 서버가 준 결과 중 실제로 쓸 수 있는 것만 고를 수 있고, 고른 결과가 사라지면 첫 결과로 되돌아간다.
-  const usableThrows = game.pendingThrows.filter((pending) => pending.legalPieceIds.length > 0);
-  const activeThrow = usableThrows.find((pending) => pending.id === preferredThrowId)
-    ?? usableThrows[0]
-    ?? null;
   const currentPlayer = snapshot.players.find((player) => player.id === game.currentPlayerId);
   // 윷판의 말 색과 참가자 목록의 색을 같은 계산으로 맞춘다.
   const sides = sideSlots(game.pieces);
@@ -120,12 +114,9 @@ export function GameScreen({
             game={game}
             players={snapshot.players}
             playerId={playerId}
-            legalPieceIds={activeThrow?.legalPieceIds ?? []}
-            previewMoves={activeThrow?.moves ?? []}
-            onSelectPiece={(pieceId) => {
-              if (activeThrow) {
-                sendCommand({ type: "SELECT_PIECE", throwId: activeThrow.id, pieceId, ...metadata() });
-              }
+            legalPieceIds={game.legalPieceIds}
+            onSelectMove={(throwId, pieceId) => {
+              sendCommand({ type: "SELECT_PIECE", throwId, pieceId, ...metadata() });
             }}
             onSelectRoute={(routeId) => sendCommand({ type: "SELECT_ROUTE", routeId, ...metadata() })}
           />
@@ -136,8 +127,6 @@ export function GameScreen({
             game={game}
             currentPlayerNickname={currentPlayer?.nickname ?? game.currentPlayerId}
             isCurrentPlayer={playerId === game.currentPlayerId}
-            activeThrowId={activeThrow?.id ?? null}
-            onSelectThrow={setPreferredThrowId}
             onThrow={() => sendCommand({ type: "THROW_YUT", ...metadata() })}
           />
           <EmojiReactions

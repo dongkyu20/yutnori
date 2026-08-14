@@ -39,7 +39,7 @@ describe("TurnPanel", () => {
 
   it("announces the current turn, shows stage-specific Korean guidance, and disables another player's action", () => {
     const { rerender } = render(
-      <TurnPanel game={createGame()} currentPlayerNickname="민수" isCurrentPlayer={false} activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined} />,
+      <TurnPanel game={createGame()} currentPlayerNickname="민수" isCurrentPlayer={false} onThrow={() => undefined} />,
     );
 
     expect(screen.getByRole("status")).toHaveTextContent("현재 차례: 민수");
@@ -51,10 +51,10 @@ describe("TurnPanel", () => {
         game={createGame({ turnStage: "AWAITING_PIECE" })}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
+        onThrow={() => undefined}
       />,
     );
-    expect(screen.getByText("움직일 말을 고르세요")).toBeInTheDocument();
+    expect(screen.getByText("움직일 말을 고른 뒤 갈 칸을 고르세요")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "윷 던지기" })).not.toBeInTheDocument();
 
     rerender(
@@ -62,7 +62,7 @@ describe("TurnPanel", () => {
         game={createGame({ turnStage: "AWAITING_ROUTE" })}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
+        onThrow={() => undefined}
       />,
     );
     expect(screen.getByText("갈 길을 고르세요")).toBeInTheDocument();
@@ -83,7 +83,7 @@ describe("TurnPanel", () => {
         })}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
+        onThrow={() => undefined}
       />,
     );
 
@@ -99,8 +99,8 @@ describe("TurnPanel", () => {
         game={createGame()}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        activeThrowId={null}
-        onSelectThrow={() => undefined}
+
+
         onThrow={onThrow}
       />,
     );
@@ -118,7 +118,7 @@ describe("TurnPanel", () => {
       lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
     });
     const { rerender } = render(
-      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined} />,
+      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
     );
 
     expect(screen.getByTestId("yut-sticks")).not.toHaveAttribute("data-animating", "true");
@@ -127,7 +127,7 @@ describe("TurnPanel", () => {
         game={{ ...initial, events: [{ id: "event-2", message: "말 이동", createdAt: 2 }] }}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
+        onThrow={() => undefined}
       />,
     );
     expect(screen.getByTestId("yut-sticks")).not.toHaveAttribute("data-animating", "true");
@@ -140,7 +140,7 @@ describe("TurnPanel", () => {
         }}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
+        onThrow={() => undefined}
       />,
     );
     expect(screen.getByTestId("yut-sticks")).toHaveAttribute("data-animating", "true");
@@ -153,7 +153,7 @@ describe("TurnPanel", () => {
       lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
     });
     const { rerender } = render(
-      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined} />,
+      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
     );
 
     rerender(
@@ -164,7 +164,7 @@ describe("TurnPanel", () => {
         }}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
+        onThrow={() => undefined}
       />,
     );
     const firstAnimatedSticks = screen.getByTestId("yut-sticks");
@@ -179,7 +179,7 @@ describe("TurnPanel", () => {
         }}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        activeThrowId={null} onSelectThrow={() => undefined} onThrow={() => undefined}
+        onThrow={() => undefined}
       />,
     );
     const secondAnimatedSticks = screen.getByTestId("yut-sticks");
@@ -190,9 +190,7 @@ describe("TurnPanel", () => {
     expect(screen.getByTestId("yut-sticks")).not.toHaveAttribute("data-animating", "true");
   });
 
-  it("offers every held result, marks the active one, and disables unusable ones", async () => {
-    const user = userEvent.setup();
-    const onSelectThrow = vi.fn();
+  it("shows every held result without asking the player to pick one here", () => {
     render(
       <TurnPanel
         game={createGame({
@@ -204,18 +202,20 @@ describe("TurnPanel", () => {
         })}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        activeThrowId="event-1"
-        onSelectThrow={onSelectThrow}
         onThrow={() => undefined}
       />,
     );
 
-    const yut = screen.getByRole("button", { name: "윷 쓰기" });
-    expect(yut).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "빽도 쓰기" })).toBeDisabled();
+    const held = screen.getByRole("list", { name: "쓸 수 있는 결과" }).children;
+    expect([...held].map((item) => item.textContent)).toEqual(["윷", "빽도, 쓸 말이 없습니다"]);
+    // 어느 결과로 갈지는 판에서 갈 칸을 눌러 고른다. 이 자리에는 누를 것이 없다.
+    expect(screen.queryByRole("button", { name: /쓰기/ })).not.toBeInTheDocument();
+    // 쓸 말이 없는 결과는 흐리게 표시하고, 그 사정은 소리로도 읽힌다.
+    expect(screen.getByText("빽도").closest("li")).toHaveClass("pending-throw--idle");
+    expect(screen.getByText("윷").closest("li")).not.toHaveClass("pending-throw--idle");
 
-    await user.click(yut);
-    expect(onSelectThrow).toHaveBeenCalledWith("event-1");
+    // 안내 문구도 새 순서를 말한다.
+    expect(screen.getByText("움직일 말을 고른 뒤 갈 칸을 고르세요")).toBeInTheDocument();
   });
 
   it("asks for another throw while yut or mo keeps the turn open", () => {
@@ -227,14 +227,15 @@ describe("TurnPanel", () => {
         })}
         currentPlayerNickname="민수"
         isCurrentPlayer
-        activeThrowId={null}
-        onSelectThrow={() => undefined}
+
+
         onThrow={() => undefined}
       />,
     );
 
     expect(screen.getByText("윷이나 모가 나왔습니다. 한 번 더 던지세요")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "모 쓰기" })).toBeDisabled();
+    // 손에 든 모는 보여 주기만 한다. 아직 쓸 말이 없으므로 흐리다.
+    expect(screen.getByText("모").closest("li")).toHaveClass("pending-throw--idle");
     expect(screen.getByRole("button", { name: "윷 던지기" })).toBeEnabled();
   });
 

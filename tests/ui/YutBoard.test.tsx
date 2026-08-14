@@ -23,7 +23,15 @@ function createGame(overrides: Partial<PublicGameState> = {}): PublicGameState {
       { id: "A-3", ownerId: "A", teamId: "A", status: "HOME", stackSize: 1 },
       { id: "B-1", ownerId: "B", teamId: "B", status: "BOARD", nodeId: "O10", stackSize: 1 },
     ],
-    pendingThrows: [{ id: "event-1", result: "GAE", legalPieceIds: ["A-1", "A-3"], moves: [] }],
+    pendingThrows: [{
+      id: "event-1",
+      result: "GAE",
+      legalPieceIds: ["A-1", "A-3"],
+      moves: [
+        { pieceId: "A-1", destinationNodeId: "D1_2", path: ["D1_1", "D1_2"], finished: false },
+        { pieceId: "A-3", destinationNodeId: "O2", path: ["O1", "O2"], finished: false },
+      ],
+    }],
     throwsRemaining: 0,
     legalPieceIds: ["A-1", "A-3"],
     legalRoutes: [],
@@ -52,7 +60,7 @@ describe("YutBoard", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={["A-1", "A-3"]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -68,7 +76,7 @@ describe("YutBoard", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={["A-1", "A-3"]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -91,35 +99,147 @@ describe("YutBoard", () => {
     expect(screen.queryByTestId("board-segment-center-b-D4_1-O15")).not.toBeInTheDocument();
   });
 
-  it("groups a stack with team text and enables only server-provided legal pieces", async () => {
-    const user = userEvent.setup();
-    const onSelectPiece = vi.fn();
+  it("groups a stack with team text and enables only server-provided legal pieces", () => {
     render(
       <YutBoard
         game={createGame()}
         players={players}
         playerId="player-a"
         legalPieceIds={["A-1", "A-3"]}
-        onSelectPiece={onSelectPiece}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
 
     const stack = screen.getByRole("button", { name: "A팀 말 2개 가운데 지점" });
-    const homePiece = screen.getByRole("button", { name: "A팀 말 1개 출발 대기" });
-    const opponent = screen.getByRole("button", { name: "B팀 말 1개 바깥 지점 10" });
-
     expect(stack).toHaveTextContent("A ×2");
     expect(stack).toBeEnabled();
-    expect(homePiece).toBeEnabled();
-    expect(opponent).toBeDisabled();
+    expect(screen.getByRole("button", { name: "A팀 말 1개 출발 대기" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "B팀 말 1개 바깥 지점 10" })).toBeDisabled();
+  });
 
-    stack.focus();
-    await user.keyboard("{Enter}");
-    homePiece.focus();
-    await user.keyboard(" ");
-    expect(onSelectPiece).toHaveBeenNthCalledWith(1, "A-1");
-    expect(onSelectPiece).toHaveBeenNthCalledWith(2, "A-3");
+  it("asks for a destination instead of moving as soon as a piece is picked", async () => {
+    const user = userEvent.setup();
+    const onSelectMove = vi.fn();
+    render(
+      <YutBoard
+        game={createGame({
+          pendingThrows: [
+            {
+              id: "event-1",
+              result: "GAE",
+              legalPieceIds: ["A-1"],
+              moves: [{ pieceId: "A-1", destinationNodeId: "D2_1", path: ["D2_2", "D2_1"], finished: false }],
+            },
+          ],
+        })}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-1"]}
+        onSelectMove={onSelectMove}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    const stack = screen.getByRole("button", { name: "A팀 말 2개 가운데 지점" });
+    expect(screen.queryByTestId("move-choices")).not.toBeInTheDocument();
+
+    await user.click(stack);
+
+    // 말을 눌렀다고 곧바로 움직이지 않는다. 갈 곳이 판에 떠야 한다.
+    expect(onSelectMove).not.toHaveBeenCalled();
+    expect(stack).toHaveAttribute("aria-pressed", "true");
+    const choice = screen.getByRole("button", { name: "개로 대각선 지점 2-1" });
+    expect(choice).toHaveAttribute("data-throw-id", "event-1");
+
+    await user.click(choice);
+    expect(onSelectMove).toHaveBeenCalledWith("event-1", "A-1");
+  });
+
+  it("offers one destination per held result and lets go of the piece when picked again", async () => {
+    const user = userEvent.setup();
+    render(
+      <YutBoard
+        game={createGame({
+          pendingThrows: [
+            {
+              id: "event-1",
+              result: "GAE",
+              legalPieceIds: ["A-1"],
+              moves: [{ pieceId: "A-1", destinationNodeId: "D2_1", path: ["D2_2", "D2_1"], finished: false }],
+            },
+            {
+              id: "event-2",
+              result: "BACK_DO",
+              legalPieceIds: ["A-1"],
+              moves: [{ pieceId: "A-1", destinationNodeId: "D1_2", path: ["D1_2"], finished: false }],
+            },
+            {
+              id: "event-3",
+              result: "MO",
+              legalPieceIds: ["A-3"],
+              moves: [{ pieceId: "A-3", destinationNodeId: "O5", path: ["O1", "O2", "O3", "O4", "O5"], finished: false }],
+            },
+          ],
+        })}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-1", "A-3"]}
+        onSelectMove={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    const stack = screen.getByRole("button", { name: "A팀 말 2개 가운데 지점" });
+    await user.click(stack);
+
+    // 고른 말이 갈 수 있는 곳만 뜬다. 다른 말의 수는 섞이지 않는다.
+    const choices = screen.getByTestId("move-choices");
+    expect([...choices.children].map((button) => button.getAttribute("data-destination")))
+      .toEqual(["D2_1", "D1_2"]);
+    expect(screen.queryByRole("button", { name: /모로/ })).not.toBeInTheDocument();
+
+    await user.click(stack);
+    expect(screen.queryByTestId("move-choices")).not.toBeInTheDocument();
+    expect(stack).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("names a finishing choice by what it does, not by the square it borrows", async () => {
+    const user = userEvent.setup();
+    render(
+      <YutBoard
+        game={createGame({
+          pendingThrows: [
+            {
+              id: "event-1",
+              result: "DO",
+              legalPieceIds: ["A-1"],
+              moves: [{ pieceId: "A-1", destinationNodeId: "FINISH", path: ["FINISH"], finished: true }],
+            },
+            {
+              id: "event-2",
+              result: "GEOL",
+              legalPieceIds: ["A-1"],
+              moves: [{ pieceId: "A-1", destinationNodeId: "O10", path: ["O10"], finished: false }],
+            },
+          ],
+        })}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-1"]}
+        onSelectMove={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "A팀 말 2개 가운데 지점" }));
+
+    // 참은 판에 좌표가 없어 시작점 모서리를 빌려 쓴다. 이름까지 빌려 쓰면 엉뚱해진다.
+    const finish = screen.getByRole("button", { name: "도로 완주" });
+    expect(finish).toHaveAttribute("data-destination", "O0");
+    expect(finish).toHaveTextContent("완주");
+    // 상대 말이 선 칸으로 가는 수는 잡는다고 알려 준다.
+    expect(screen.getByRole("button", { name: "걸로 바깥 지점 10, 상대 말을 잡습니다" })).toBeInTheDocument();
   });
 
   it("marks the start and the shortcut gates, and leaves plain nodes alone", () => {
@@ -129,7 +249,7 @@ describe("YutBoard", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={[]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -171,7 +291,7 @@ describe("YutBoard", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={[]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -227,7 +347,7 @@ describe("YutBoard", () => {
         players={individualPlayers}
         playerId="player-a"
         legalPieceIds={[]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -255,7 +375,7 @@ describe("YutBoard", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={["A-1", "A-3"]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -276,10 +396,7 @@ describe("YutBoard", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={["A-1", "A-3"]}
-        previewMoves={[
-          { pieceId: "A-1", destinationNodeId: "D1_2", path: ["D1_1", "D1_2"], finished: false },
-        ]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -307,10 +424,7 @@ describe("YutBoard", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={["A-1", "A-3"]}
-        previewMoves={[
-          { pieceId: "A-1", destinationNodeId: "D1_2", path: ["D1_1", "D1_2"], finished: false },
-        ]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -325,17 +439,17 @@ describe("YutBoard", () => {
 
   it("marks a capture, and a finish at the start corner", async () => {
     const user = userEvent.setup();
+    const withMove = (move: PublicGameState["pendingThrows"][number]["moves"][number]) => createGame({
+      pendingThrows: [{ id: "event-1", result: "GAE", legalPieceIds: ["A-1"], moves: [move] }],
+    });
     const { rerender } = render(
       <YutBoard
-        game={createGame()}
+        // 도착 칸 O10에는 B팀 말이 서 있다. 잡기 여부는 클라이언트가 말 위치로 알아낸다.
+        game={withMove({ pieceId: "A-1", destinationNodeId: "O10", path: ["O10"], finished: false })}
         players={players}
         playerId="player-a"
         legalPieceIds={["A-1"]}
-        previewMoves={[
-          // 도착 칸 O10에는 B팀 말이 서 있다. 잡기 여부는 클라이언트가 말 위치로 알아낸다.
-          { pieceId: "A-1", destinationNodeId: "O10", path: ["O10"], finished: false },
-        ]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -345,14 +459,11 @@ describe("YutBoard", () => {
 
     rerender(
       <YutBoard
-        game={createGame()}
+        game={withMove({ pieceId: "A-1", destinationNodeId: "FINISH", path: ["FINISH"], finished: true })}
         players={players}
         playerId="player-a"
         legalPieceIds={["A-1"]}
-        previewMoves={[
-          { pieceId: "A-1", destinationNodeId: "FINISH", path: ["FINISH"], finished: true },
-        ]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -372,10 +483,7 @@ describe("YutBoard", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={["A-1"]}
-        previewMoves={[
-          { pieceId: "B-1", destinationNodeId: "O12", path: ["O11", "O12"], finished: false },
-        ]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={() => undefined}
       />,
     );
@@ -401,7 +509,7 @@ describe("YutBoard", () => {
         players={players}
         playerId="player-a"
         legalPieceIds={["A-1", "A-3"]}
-        onSelectPiece={() => undefined}
+        onSelectMove={() => undefined}
         onSelectRoute={onSelectRoute}
       />,
     );
@@ -477,7 +585,11 @@ describe("YutBoard", () => {
       <GameScreen snapshot={snapshot} playerId="player-a" sendCommand={sendCommand} />,
     );
 
+    // 말을 고른 다음 판에 뜬 갈 곳을 눌러야 비로소 이동 명령이 나간다.
     await user.click(screen.getByRole("button", { name: "A팀 말 2개 가운데 지점" }));
+    expect(sendCommand).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "개로 대각선 지점 1-2" }));
+
     const routeSnapshot = {
       ...snapshot,
       version: 13,
