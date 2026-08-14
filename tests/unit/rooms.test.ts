@@ -522,6 +522,109 @@ describe("RoomService timers and cleanup", () => {
   });
 });
 
+describe("RoomService 말 색 고르기", () => {
+  const colourOf = (snapshot: PublicRoomSnapshot, playerId: string) =>
+    snapshot.players.find((player) => player.id === playerId)?.colorSlot;
+
+  it("leaves every colour free until someone takes one", () => {
+    const service = new RoomService(new FakeClock().options());
+    const sessions = createPlayers(service, "individual", ["Host", "Guest"]);
+
+    // 미리 나눠 주지 않는다. 넷이 모여도 남은 색 안에서 고를 수 있어야 하기 때문이다.
+    sessions.forEach((session) => {
+      expect(colourOf(session.snapshot, session.playerId)).toBeUndefined();
+    });
+  });
+
+  it("gives a player the colour they pick and refuses it to everyone else", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host, guest] = createPlayers(service, "individual", ["Host", "Guest"]);
+
+    const chosen = dispatch(service, host.playerId, guest.snapshot, { type: "CHOOSE_COLOR", slot: 2 });
+    expect(colourOf(chosen, host.playerId)).toBe(2);
+    expect(colourOf(chosen, guest.playerId)).toBeUndefined();
+
+    const taken = roomError(() =>
+      dispatch(service, guest.playerId, chosen, { type: "CHOOSE_COLOR", slot: 2 }));
+    expect(taken.code).toBe("COLOR_TAKEN");
+    expect(taken.message).toMatch(/[가-힣]/);
+
+    // 다른 색은 그대로 비어 있어 고를 수 있다.
+    const second = dispatch(service, guest.playerId, chosen, { type: "CHOOSE_COLOR", slot: 0 });
+    expect(colourOf(second, guest.playerId)).toBe(0);
+  });
+
+  it("lets a player move to a colour they just released", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host, guest] = createPlayers(service, "individual", ["Host", "Guest"]);
+
+    let snapshot = dispatch(service, host.playerId, guest.snapshot, { type: "CHOOSE_COLOR", slot: 1 });
+    snapshot = dispatch(service, host.playerId, snapshot, { type: "CHOOSE_COLOR", slot: 3 });
+
+    expect(colourOf(snapshot, host.playerId)).toBe(3);
+    // 1번은 다시 비었으므로 다른 사람이 가져갈 수 있다.
+    snapshot = dispatch(service, guest.playerId, snapshot, { type: "CHOOSE_COLOR", slot: 1 });
+    expect(colourOf(snapshot, guest.playerId)).toBe(1);
+  });
+
+  it("lets only the first member of a team choose, and paints both members", () => {
+    const service = new RoomService(new FakeClock().options());
+    const sessions = createPlayers(service, "team", [
+      "Host", "Bee", "Cat", "Deer", "Eel", "Fox", "Goat", "Hen",
+    ]);
+    const teams: TeamId[] = ["A", "A", "B", "B", "C", "C", "D", "D"];
+    let snapshot = sessions.at(-1)!.snapshot;
+    sessions.forEach((session, index) => {
+      snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+        type: "ASSIGN_TEAM",
+        playerId: session.playerId,
+        teamId: teams[index],
+      });
+    });
+
+    // A팀에 먼저 들어온 Host가 팀 색을 정한다.
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "CHOOSE_COLOR", slot: 3 });
+    expect(colourOf(snapshot, sessions[0].playerId)).toBe(3);
+    expect(colourOf(snapshot, sessions[1].playerId)).toBe(3);
+
+    // 같은 팀의 나중 사람은 고칠 수 없다.
+    expect(roomError(() =>
+      dispatch(service, sessions[1].playerId, snapshot, { type: "CHOOSE_COLOR", slot: 0 })).code)
+      .toBe("TEAM_LEADER_ONLY");
+
+    // 다른 팀은 이미 A팀이 가진 색을 가져갈 수 없다.
+    expect(roomError(() =>
+      dispatch(service, sessions[2].playerId, snapshot, { type: "CHOOSE_COLOR", slot: 3 })).code)
+      .toBe("COLOR_TAKEN");
+    snapshot = dispatch(service, sessions[2].playerId, snapshot, { type: "CHOOSE_COLOR", slot: 1 });
+    expect(colourOf(snapshot, sessions[3].playerId)).toBe(1);
+  });
+
+  it("fills the colours nobody picked when the game starts", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host, guest] = createPlayers(service, "individual", ["Host", "Guest"]);
+
+    let snapshot = dispatch(service, guest.playerId, guest.snapshot, { type: "CHOOSE_COLOR", slot: 0 });
+    snapshot = dispatch(service, host.playerId, snapshot, { type: "SET_READY", ready: true });
+    snapshot = dispatch(service, guest.playerId, snapshot, { type: "SET_READY", ready: true });
+    snapshot = dispatch(service, host.playerId, snapshot, { type: "START_GAME" });
+
+    // 고른 사람은 그대로, 안 고른 사람은 남은 색 중 앞에서부터 받는다.
+    expect(colourOf(snapshot, guest.playerId)).toBe(0);
+    expect(colourOf(snapshot, host.playerId)).toBe(1);
+    expect(snapshot.phase).toBe("playing");
+  });
+
+  it("refuses a colour change once the game is under way", () => {
+    const service = new RoomService(new FakeClock().options());
+    const [host] = readyIndividualGame(service);
+
+    expect(roomError(() =>
+      dispatch(service, host.playerId, host.snapshot, { type: "CHOOSE_COLOR", slot: 2 })).code)
+      .toBe("ROOM_NOT_WAITING");
+  });
+});
+
 describe("RoomService 다시 하기", () => {
   it("returns a finished room to waiting with the same players, ready only for who asked", () => {
     const clock = new FakeClock();

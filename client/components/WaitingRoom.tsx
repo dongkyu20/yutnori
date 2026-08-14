@@ -48,11 +48,13 @@ export function WaitingRoom({ snapshot, playerId, sendCommand }: WaitingRoomProp
       hostPlayerId={snapshot.hostPlayerId}
       currentPlayerId={playerId}
       showTeamControls={isHost && snapshot.mode === "team"}
+      isTeamMode={snapshot.mode === "team"}
       teamSizes={teamSizes}
       onToggleReady={(player) => sendCommand({ type: "SET_READY", ready: !player.ready, ...metadata() })}
       onAssignTeam={(targetPlayerId, teamId) => sendCommand({
         type: "ASSIGN_TEAM", playerId: targetPlayerId, teamId, ...metadata(),
       })}
+      onChooseColor={(slot) => sendCommand({ type: "CHOOSE_COLOR", slot, ...metadata() })}
       onKick={(player) => kick(player.id, player.nickname)}
     />
   );

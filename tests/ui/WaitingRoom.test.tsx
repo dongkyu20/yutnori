@@ -164,6 +164,56 @@ describe("WaitingRoom", () => {
     expect(commands[0]).toMatchObject({ type: "KICK_PLAYER", playerId: "guest", roomVersion: 7 });
   });
 
+  it("lets a player take a free colour and blocks the one another player holds", async () => {
+    const user = userEvent.setup();
+    const { commands } = renderWaitingRoom(createSnapshot({
+      players: [
+        { id: "host", nickname: "Host", connected: true, ready: true },
+        { id: "guest", nickname: "Guest", connected: true, ready: true, colorSlot: 1 },
+      ],
+    }));
+
+    // 남이 선점한 색은 누를 수 없고, 누가 쓰는지 이름으로 알려 준다.
+    const taken = screen.getByRole("button", { name: "청록, Guest이(가) 쓰는 색" });
+    expect(taken).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "치자 고르기" }));
+
+    expect(commands).toEqual([
+      { type: "CHOOSE_COLOR", slot: 2, roomVersion: 7, requestId: expect.any(String) },
+    ]);
+  });
+
+  it("marks the colour a player already holds and offers no picker for anyone else", () => {
+    renderWaitingRoom(createSnapshot({
+      players: [
+        { id: "host", nickname: "Host", connected: true, ready: true, colorSlot: 3 },
+        { id: "guest", nickname: "Guest", connected: true, ready: true },
+      ],
+    }));
+
+    expect(screen.getByRole("button", { name: "먹 고르기" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "주홍 고르기" })).toHaveAttribute("aria-pressed", "false");
+    // 고르개는 자기 것만 나온다. 남의 색을 대신 정해 줄 수는 없다.
+    expect(screen.getAllByRole("group")).toHaveLength(1);
+  });
+
+  it("gives the colour picker to the first member of a team, not the others", () => {
+    renderWaitingRoom(
+      createSnapshot({
+        mode: "team",
+        players: [
+          { id: "host", nickname: "Host", connected: true, ready: true, teamId: "A" },
+          { id: "mate", nickname: "Mate", connected: true, ready: true, teamId: "A" },
+        ],
+      }),
+      "mate",
+    );
+
+    // A팀에 먼저 들어온 사람이 팀 색을 정한다. 나중 사람에게는 고르개가 없다.
+    expect(screen.queryByRole("group")).not.toBeInTheDocument();
+  });
+
   it("explains how to copy the code when the Clipboard API is unavailable", async () => {
     const user = userEvent.setup();
     renderWaitingRoom();

@@ -27,7 +27,13 @@ const ROOM_ERROR_MESSAGES = {
   GAME_NOT_PLAYING: "진행 중인 게임이 아닙니다.",
   ROOM_NOT_WAITING: "대기 중인 방에서만 수행할 수 있습니다.",
   ROOM_NOT_FINISHED: "경기가 끝난 방에서만 다시 시작할 수 있습니다.",
+  COLOR_TAKEN: "이미 다른 참가자가 고른 색입니다.",
+  TEAM_LEADER_ONLY: "팀에 먼저 들어온 참가자만 팀 색을 고를 수 있습니다.",
+  NO_TEAM: "팀을 먼저 배정받아야 색을 고를 수 있습니다.",
 } as const;
+
+/** 고를 수 있는 말 색의 개수. 클라이언트 팔레트와 같아야 한다. */
+const COLOR_SLOTS = 4;
 
 type VersionedCommand = Exclude<InRoomCommand, { type: "REACT" }>;
 
@@ -49,6 +55,12 @@ interface Room {
   hostPlayerId: string;
   players: RoomPlayer[];
   game: GameState | null;
+  /**
+   * 조작 주체(개인전은 참가자 id, 팀전은 팀 id)가 고른 색 자리.
+   * 아무도 안 고른 채로 두었다가 게임을 시작할 때 빈 자리를 채운다.
+   * 미리 나눠 주면 넷이 다 모였을 때 모든 색이 잠겨 아무도 바꿀 수 없다.
+   */
+  colorChoices: Map<string, number>;
   actionExpiresAt: number | null;
   actionTimerId: unknown | null;
   emptySince: number | null;
@@ -163,6 +175,7 @@ export class RoomService {
       hostPlayerId: session.player.id,
       players: [session.player],
       game: null,
+      colorChoices: new Map(),
       actionExpiresAt: null,
       actionTimerId: null,
       emptySince: null,
@@ -320,6 +333,10 @@ export class RoomService {
         this.assertHost(room, actor.id);
         this.kickPlayer(room, actor.id, command.playerId);
         return;
+      case "CHOOSE_COLOR":
+        this.assertWaiting(room);
+        this.chooseColor(room, actor, command.slot);
+        return;
       case "START_GAME":
         this.assertWaiting(room);
         this.assertHost(room, actor.id);
@@ -414,6 +431,7 @@ export class RoomService {
     const eligibility = this.startEligibility(room);
     if (!eligibility.canStart) throw new RoomError(eligibility.code, eligibility.reason);
 
+    this.fillMissingColors(room);
     room.game = createGame({
       mode: room.mode,
       players: room.players.map((player) => ({
@@ -487,6 +505,45 @@ export class RoomService {
   private assertWaiting(room: Room): void {
     if (room.phase !== "waiting") {
       throw new RoomError("ROOM_NOT_WAITING", ROOM_ERROR_MESSAGES.ROOM_NOT_WAITING);
+    }
+  }
+
+  /**
+   * 색을 가진 주체. 개인전은 참가자 자신, 팀전은 그 팀이다.
+   * 팀 색은 그 팀에 먼저 들어온 사람이 정한다. 둘이 같은 말을 쓰므로 색도 하나여야 한다.
+   */
+  private colorControllerFor(room: Room, actor: RoomPlayer): string {
+    if (room.mode !== "team") return actor.id;
+    if (!actor.teamId) {
+      throw new RoomError("NO_TEAM", ROOM_ERROR_MESSAGES.NO_TEAM);
+    }
+    const leader = room.players.find((player) => player.teamId === actor.teamId);
+    if (leader?.id !== actor.id) {
+      throw new RoomError("TEAM_LEADER_ONLY", ROOM_ERROR_MESSAGES.TEAM_LEADER_ONLY);
+    }
+    return actor.teamId;
+  }
+
+  private chooseColor(room: Room, actor: RoomPlayer, slot: number): void {
+    const controllerId = this.colorControllerFor(room, actor);
+    for (const [holder, held] of room.colorChoices) {
+      if (held === slot && holder !== controllerId) {
+        throw new RoomError("COLOR_TAKEN", ROOM_ERROR_MESSAGES.COLOR_TAKEN);
+      }
+    }
+    room.colorChoices.set(controllerId, slot);
+  }
+
+  /** 게임을 시작할 때 아직 색이 없는 주체에게 남은 색을 앞에서부터 준다. */
+  private fillMissingColors(room: Room): void {
+    const taken = new Set(room.colorChoices.values());
+    for (const player of room.players) {
+      const controllerId = room.mode === "team" ? player.teamId : player.id;
+      if (!controllerId || room.colorChoices.has(controllerId)) continue;
+      const free = [...Array(COLOR_SLOTS).keys()].find((slot) => !taken.has(slot));
+      if (free === undefined) continue;
+      room.colorChoices.set(controllerId, free);
+      taken.add(free);
     }
   }
 
@@ -590,13 +647,19 @@ export class RoomService {
       hostPlayerId: room.hostPlayerId,
       canStart: eligibility.canStart,
       startEligibilityReason: eligibility.reason,
-      players: room.players.map((player) => ({
-        id: player.id,
-        nickname: player.nickname,
-        connected: player.connected,
-        ready: player.ready,
-        ...(player.teamId ? { teamId: player.teamId } : {}),
-      })),
+      players: room.players.map((player) => {
+        // 팀전은 팀이 색을 가지므로 팀원 둘이 같은 값을 받는다.
+        const controllerId = room.mode === "team" ? player.teamId : player.id;
+        const colorSlot = controllerId ? room.colorChoices.get(controllerId) : undefined;
+        return {
+          id: player.id,
+          nickname: player.nickname,
+          connected: player.connected,
+          ready: player.ready,
+          ...(player.teamId ? { teamId: player.teamId } : {}),
+          ...(colorSlot === undefined ? {} : { colorSlot }),
+        };
+      }),
       game: room.game
         ? toPublicGameState(room.game, room.phase === "playing" ? room.actionExpiresAt : null)
         : null,

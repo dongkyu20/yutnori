@@ -283,6 +283,22 @@ button, input, select, textarea { min-height: 44px; }
 .player-rail__team select { min-height: 2.5rem; border: 2px solid var(--ink); border-radius: .5rem; background: var(--paper); color: var(--ink); padding: .35rem .5rem; font: inherit; }
 .player-rail__kick { min-height: 2.5rem; border: 2px solid var(--vermilion); border-radius: .55rem; background: transparent; color: var(--vermilion); padding: .35rem .75rem; font-weight: 800; cursor: pointer; }
 
+/* 말 색 고르개. 남이 선점한 색은 눌리지 않고 흐리게 남는다. */
+.player-rail__colors { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; border: 0; padding: 0; }
+.player-rail__colors legend { padding: 0 0 .3rem; font-size: .8rem; font-weight: 800; }
+.player-rail__color {
+  min-width: 3.4rem; min-height: 2.6rem;
+  border: 2px solid var(--ink); border-radius: .55rem;
+  color: #FFF; font-size: .82rem; font-weight: 900; text-shadow: 0 1px 2px #000;
+  cursor: pointer;
+}
+.player-rail__color[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--gold), 0 2px 0 var(--ink); }
+.player-rail__color:disabled { opacity: .3; cursor: not-allowed; }
+.player-rail__color--side-0 { background: repeating-linear-gradient(45deg, #C84A35 0 7px, #782718 7px 14px); }
+.player-rail__color--side-1 { background: repeating-linear-gradient(-45deg, #147D73 0 7px, #084841 7px 14px); }
+.player-rail__color--side-2 { background: repeating-radial-gradient(circle, #D5A62D 0 4px, #76590D 5px 9px); }
+.player-rail__color--side-3 { background: repeating-linear-gradient(90deg, #606966 0 6px, #1F2724 6px 12px); }
+
 .yut-board { display: grid; gap: clamp(.8rem, 1.6vw, 1.25rem); border: 1px solid rgb(31 39 36 / 30%); border-radius: 1rem; background: var(--paper); padding: clamp(.75rem, 2vw, 1.5rem); box-shadow: 0 16px 40px rgb(31 39 36 / 10%); }
 .yut-board > h2 { margin: 0; font-size: 1rem; color: var(--muted-ink); }
 /* 윷판이 화면을 다 먹어 차례 패널이 접히지 않도록 높이를 뷰포트로 묶는다. */

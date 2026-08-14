@@ -7,6 +7,8 @@ export type ClientCommand =
   | { type: "JOIN_ROOM"; nickname: string; roomCode: string }
   | { type: "SET_READY"; ready: boolean; roomVersion: number; requestId: string }
   | { type: "ASSIGN_TEAM"; playerId: string; teamId: TeamId; roomVersion: number; requestId: string }
+  /** 내 말 색을 고른다. 팀전에서는 팀에 먼저 들어온 사람이 팀 색을 정한다. */
+  | { type: "CHOOSE_COLOR"; slot: number; roomVersion: number; requestId: string }
   | { type: "KICK_PLAYER"; playerId: string; roomVersion: number; requestId: string }
   | { type: "START_GAME"; roomVersion: number; requestId: string }
   /** 경기가 끝난 방을 같은 참가자와 팀 그대로 대기 상태로 되돌린다. */
@@ -53,7 +55,15 @@ export interface PublicGameState {
 }
 export interface PublicRoomSnapshot {
   roomCode: string; version: number; phase: RoomPhase; mode: GameMode; hostPlayerId: string;
-  players: Array<{ id: string; nickname: string; connected: boolean; ready: boolean; teamId?: TeamId }>;
+  players: Array<{
+    id: string;
+    nickname: string;
+    connected: boolean;
+    ready: boolean;
+    teamId?: TeamId;
+    /** 고른 말 색 자리(0~3). 아직 아무도 고르지 않았으면 없다. 팀전은 팀원이 같은 값을 받는다. */
+    colorSlot?: number;
+  }>;
   canStart: boolean;
   startEligibilityReason: string | null;
   game: PublicGameState | null;

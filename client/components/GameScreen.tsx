@@ -41,7 +41,7 @@ export function GameScreen({
 
   const currentPlayer = snapshot.players.find((player) => player.id === game.currentPlayerId);
   // 윷판의 말 색과 참가자 목록의 색을 같은 계산으로 맞춘다.
-  const sides = sideSlots(game.pieces);
+  const sides = sideSlots(snapshot.players);
   const metadata = () => ({ roomVersion: snapshot.version, requestId: crypto.randomUUID() });
   const winnerName = game.winnerId === null
     ? null

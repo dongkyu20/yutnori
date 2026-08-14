@@ -1,6 +1,7 @@
 "use client";
 
 import type { TeamId } from "../../shared/protocol";
+import { SIDE_NAMES } from "../sideColor";
 
 export interface RailPlayer {
   id: string;
@@ -8,6 +9,7 @@ export interface RailPlayer {
   connected: boolean;
   ready: boolean;
   teamId?: TeamId;
+  colorSlot?: number;
 }
 
 interface PlayerRailProps {
@@ -15,22 +17,53 @@ interface PlayerRailProps {
   hostPlayerId: string;
   currentPlayerId: string | null;
   showTeamControls: boolean;
+  /** 팀전인가. 팀 색은 팀에 먼저 들어온 사람이 정하므로 방장 권한과는 별개다. */
+  isTeamMode: boolean;
   teamSizes: Record<TeamId, number>;
   onToggleReady: (player: RailPlayer) => void;
   onAssignTeam: (playerId: string, teamId: TeamId) => void;
+  onChooseColor: (slot: number) => void;
   onKick: (player: RailPlayer) => void;
 }
 
 const TEAM_IDS: TeamId[] = ["A", "B", "C", "D"];
+
+/**
+ * 이 사람이 색을 고를 수 있는가.
+ * 개인전은 자기 색을 자기가, 팀전은 팀에 먼저 들어온 사람이 팀 색을 정한다. 서버 규칙과 같다.
+ */
+function canChooseColor(player: RailPlayer, players: readonly RailPlayer[], isTeamMode: boolean): boolean {
+  if (!isTeamMode) return true;
+  if (!player.teamId) return false;
+  return players.find((candidate) => candidate.teamId === player.teamId)?.id === player.id;
+}
+
+/** 그 색을 이미 쓰고 있는 다른 편의 이름. 없으면 비어 있는 색이다. */
+function holderOf(
+  slot: number,
+  player: RailPlayer,
+  players: readonly RailPlayer[],
+  isTeamMode: boolean,
+): string | null {
+  const mine = isTeamMode ? player.teamId : player.id;
+  const holder = players.find((candidate) => {
+    if (candidate.colorSlot !== slot) return false;
+    return (isTeamMode ? candidate.teamId : candidate.id) !== mine;
+  });
+  if (!holder) return null;
+  return isTeamMode && holder.teamId ? `${holder.teamId}팀` : holder.nickname;
+}
 
 export function PlayerRail({
   players,
   hostPlayerId,
   currentPlayerId,
   showTeamControls,
+  isTeamMode,
   teamSizes,
   onToggleReady,
   onAssignTeam,
+  onChooseColor,
   onKick,
 }: PlayerRailProps) {
   return (
@@ -65,6 +98,29 @@ export function PlayerRail({
               >
                 {player.ready ? "준비 취소" : "준비하기"}
               </button>
+            )}
+            {isCurrentPlayer && canChooseColor(player, players, isTeamMode) && (
+              <fieldset className="player-rail__colors">
+                <legend>{isTeamMode ? `${player.teamId}팀 말 색` : "내 말 색"}</legend>
+                {SIDE_NAMES.map((name, slot) => {
+                  const holder = holderOf(slot, player, players, isTeamMode);
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      className={`player-rail__color player-rail__color--side-${slot}`}
+                      aria-label={holder ? `${name}, ${holder}이(가) 쓰는 색` : `${name} 고르기`}
+                      aria-pressed={player.colorSlot === slot}
+                      data-color-slot={slot}
+                      // 남이 선점한 색은 고를 수 없다. 누가 쓰는지는 이름으로 알려 준다.
+                      disabled={holder !== null}
+                      onClick={() => onChooseColor(slot)}
+                    >
+                      {name}
+                    </button>
+                  );
+                })}
+              </fieldset>
             )}
             {showTeamControls && (
               <label className="player-rail__team">

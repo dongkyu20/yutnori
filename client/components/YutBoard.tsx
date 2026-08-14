@@ -219,7 +219,7 @@ export function YutBoard({
   const legalPieces = new Set(legalPieceIds);
   // game.pieces가 새 배열로 올 때만 다시 만든다. 그렇지 않으면 무관한 리렌더마다
   // BoardStage에 새 slots를 넘겨 그 효과들이 다시 돌게 된다.
-  const slots = useMemo(() => sideSlots(game.pieces), [game.pieces]);
+  const slots = useMemo(() => sideSlots(players), [players]);
   const [stageActive, setStageActive] = useState(false);
   const [animating, setAnimating] = useState<readonly string[]>([]);
   // 고른 말. 이것이 정해져야 갈 곳이 판에 뜬다.

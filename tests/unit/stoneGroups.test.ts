@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { PublicGameState } from "../../shared/protocol";
-import { sideSlots } from "../../client/sideColor";
+/** 이 테스트는 묶는 규칙만 본다. 색 자리는 참가자가 대기실에서 고르는 값이므로 여기서는 직접 만든다. */
+const slotsOf = (...controllerIds: string[]) =>
+  new Map(controllerIds.map((controllerId, index) => [controllerId, index]));
 import { boardGroups, stoneGroups } from "../../client/three/stoneGroups";
 
 type Piece = PublicGameState["pieces"][number];
@@ -19,7 +21,7 @@ describe("3D 말 덩이 묶기", () => {
   it("draws a stack exactly as thick as the pieces standing in it", () => {
     const pieces = stack("O3", "player-a", 2);
 
-    const groups = boardGroups(pieces, sideSlots(pieces));
+    const groups = boardGroups(pieces, slotsOf("player-a", "player-b", "A"));
 
     expect(groups).toHaveLength(1);
     // stackSize는 이미 묶음 전체의 크기다. 말 수를 다시 더하면 두 개짜리가 세 개로 두꺼워진다.
@@ -30,7 +32,7 @@ describe("3D 말 덩이 묶기", () => {
   it("draws a four-piece stack as four", () => {
     const pieces = stack("D2_1", "player-b", 4);
 
-    const groups = boardGroups(pieces, sideSlots(pieces));
+    const groups = boardGroups(pieces, slotsOf("player-a", "player-b", "A"));
 
     expect(groups[0].stackSize).toBe(4);
     expect(groups[0].pieceIds).toHaveLength(4);
@@ -44,7 +46,7 @@ describe("3D 말 덩이 묶기", () => {
       piece({ id: "b-2", ownerId: "player-b", status: "HOME" }),
     ];
 
-    const groups = stoneGroups(captured, sideSlots(captured), () => true, () => "O5");
+    const groups = stoneGroups(captured, slotsOf("player-b"), () => true, () => "O5");
 
     expect(groups).toHaveLength(1);
     expect(groups[0].nodeId).toBe("O5");
@@ -58,7 +60,7 @@ describe("3D 말 덩이 묶기", () => {
       piece({ id: "b-1", ownerId: "player-b", nodeId: "O5" }),
     ];
 
-    const groups = boardGroups(pieces, sideSlots(pieces));
+    const groups = boardGroups(pieces, slotsOf("player-a", "player-b", "A"));
 
     expect(groups).toHaveLength(2);
     expect(groups.map((group) => group.stackSize)).toEqual([1, 1]);
@@ -73,7 +75,7 @@ describe("3D 말 덩이 묶기", () => {
       piece({ id: "b-1", ownerId: "player-b", teamId: "A", nodeId: "O7", stackSize: 2 }),
     ];
 
-    const groups = boardGroups(pieces, sideSlots(pieces));
+    const groups = boardGroups(pieces, slotsOf("player-a", "player-b", "A"));
 
     expect(groups).toHaveLength(1);
     expect(groups[0].stackSize).toBe(2);
@@ -88,7 +90,7 @@ describe("3D 말 덩이 묶기", () => {
       piece({ id: "a-4", status: "BOARD", nodeId: "O1" }),
     ];
 
-    const groups = boardGroups(pieces, sideSlots(pieces));
+    const groups = boardGroups(pieces, slotsOf("player-a", "player-b", "A"));
 
     expect(groups.map((group) => group.pieceIds)).toEqual([["a-4"]]);
     expect(groups[0].key).toBe("O1:player-a");

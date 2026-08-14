@@ -8,8 +8,8 @@ import { YutBoard } from "../../client/components/YutBoard";
 import { GameScreen } from "../../client/components/GameScreen";
 
 const players: PublicRoomSnapshot["players"] = [
-  { id: "player-a", nickname: "민수", connected: true, ready: true, teamId: "A" },
-  { id: "player-b", nickname: "지수", connected: true, ready: true, teamId: "B" },
+  { id: "player-a", nickname: "민수", connected: true, ready: true, teamId: "A", colorSlot: 0 },
+  { id: "player-b", nickname: "지수", connected: true, ready: true, teamId: "B", colorSlot: 1 },
 ];
 
 function createGame(overrides: Partial<PublicGameState> = {}): PublicGameState {
@@ -329,9 +329,9 @@ describe("YutBoard", () => {
 
   it("gives each individual player its own piece colour", () => {
     const individualPlayers: PublicRoomSnapshot["players"] = [
-      { id: "player-a", nickname: "민수", connected: true, ready: true },
-      { id: "player-b", nickname: "지수", connected: true, ready: true },
-      { id: "player-c", nickname: "하늘", connected: true, ready: true },
+      { id: "player-a", nickname: "민수", connected: true, ready: true, colorSlot: 0 },
+      { id: "player-b", nickname: "지수", connected: true, ready: true, colorSlot: 1 },
+      { id: "player-c", nickname: "하늘", connected: true, ready: true, colorSlot: 2 },
     ];
     render(
       <YutBoard
@@ -534,8 +534,8 @@ describe("YutBoard", () => {
       mode: "individual",
       hostPlayerId: "player-a",
       players: [
-        { id: "player-a", nickname: "민수", connected: true, ready: true },
-        { id: "player-b", nickname: "지수", connected: true, ready: true },
+        { id: "player-a", nickname: "민수", connected: true, ready: true, colorSlot: 0 },
+        { id: "player-b", nickname: "지수", connected: true, ready: true, colorSlot: 1 },
       ],
       canStart: false,
       startEligibilityReason: null,

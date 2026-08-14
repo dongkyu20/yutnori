@@ -1,4 +1,4 @@
-import type { PublicGameState, TeamId } from "../shared/protocol";
+import type { TeamId } from "../shared/protocol";
 
 /**
  * 편마다 말 색을 하나씩 준다. 팀전은 팀 이름이, 개인전은 참가 순서가 색을 정한다.
@@ -25,9 +25,7 @@ export const SIDE_COLORS: readonly SideColor[] = Object.freeze([
   { base: 0x606966, deep: 0x1f2724 },
 ]);
 
-const TEAM_SLOTS: Readonly<Record<TeamId, number>> = { A: 0, B: 1, C: 2, D: 3 };
 
-type Piece = PublicGameState["pieces"][number];
 
 interface Side {
   teamId?: TeamId;
@@ -40,18 +38,24 @@ export function controllerIdOf(side: Side): string {
   return side.teamId ?? side.ownerId;
 }
 
+/** 색을 가진 편을 알아내는 데 필요한 참가자 정보. */
+export interface ColoredPlayer {
+  id: string;
+  teamId?: TeamId;
+  /** 서버가 정한 색 자리. 대기실에서 아직 고르지 않았으면 없다. */
+  colorSlot?: number;
+}
+
 /**
- * 편별 색 자리를 매긴다. 말 목록은 게임이 시작될 때 정해진 뒤 순서가 바뀌지 않으므로,
- * 누가 나가거나 다시 접속해도 경기 중에 색이 뒤바뀌지 않는다.
+ * 편별 색 자리를 참가자 목록에서 읽는다. 색은 참가자가 직접 고르고 서버가 지키므로,
+ * 말이 만들어진 순서 같은 것에서 유추하지 않는다. 대기실에도 아직 말이 없다.
+ * 팀전은 팀원 둘이 같은 값을 받으므로 팀 하나에 색 하나로 모인다.
  */
-export function sideSlots(pieces: readonly Piece[]): ReadonlyMap<string, number> {
+export function sideSlots(players: readonly ColoredPlayer[]): ReadonlyMap<string, number> {
   const slots = new Map<string, number>();
-  for (const piece of pieces) {
-    if (piece.teamId) {
-      slots.set(piece.teamId, TEAM_SLOTS[piece.teamId]);
-      continue;
-    }
-    if (!slots.has(piece.ownerId)) slots.set(piece.ownerId, slots.size % SIDE_COUNT);
+  for (const player of players) {
+    if (player.colorSlot === undefined) continue;
+    slots.set(player.teamId ?? player.id, player.colorSlot);
   }
   return slots;
 }
