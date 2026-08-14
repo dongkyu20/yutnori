@@ -5,8 +5,13 @@ import {
   createBoardScene,
   frameBoardCamera,
   nodeWorldPosition,
+  shockwaveAt,
   BOARD_WORLD_SIZE,
+  SHOCKWAVE_INNER_RADIUS,
+  SHOCKWAVE_MAX_RADIUS,
+  SHOCKWAVE_OUTER_RADIUS,
 } from "../../client/three/boardScene";
+import { PIECE_RADIUS } from "../../client/three/piece";
 
 describe("3D 윷판", () => {
   it("places a node from its percent coordinate", () => {
@@ -53,6 +58,45 @@ describe("3D 윷판", () => {
     board.disposables.forEach((item) => { expect(typeof item.dispose).toBe("function"); });
     // 칸마다 표식이 하나씩 있어야 한다.
     expect(board.nodeCount).toBe(Object.keys(NODE_COORDINATES).length);
+  });
+});
+
+describe("충격파 고리", () => {
+  it("never hides behind the stone standing on the landing node", () => {
+    // 수직으로 내려다보면 말은 반지름 PIECE_RADIUS만큼을 통째로 가린다.
+    // 고리는 가장 작을 때조차 그 원 바깥에 있어야 처음부터 보인다.
+    expect(SHOCKWAVE_INNER_RADIUS).toBeGreaterThan(PIECE_RADIUS);
+    expect(shockwaveAt(0).scale * SHOCKWAVE_INNER_RADIUS).toBeGreaterThan(PIECE_RADIUS);
+  });
+
+  it("spreads outward from the node to well past it", () => {
+    expect(shockwaveAt(0).scale).toBeCloseTo(1, 10);
+    expect(shockwaveAt(1).scale * SHOCKWAVE_OUTER_RADIUS).toBeCloseTo(SHOCKWAVE_MAX_RADIUS, 10);
+    // 커지기만 한다. 중간에 오므라들면 퍼지는 것으로 읽히지 않는다.
+    let previous = 0;
+    for (let t = 0; t <= 1; t += 0.05) {
+      const scale = shockwaveAt(t).scale;
+      expect(scale).toBeGreaterThanOrEqual(previous);
+      previous = scale;
+    }
+  });
+
+  it("stays bright while it is worth looking at and only fades at the end", () => {
+    const full = shockwaveAt(0).opacity;
+    expect(full).toBeGreaterThan(0.5);
+    // 처음부터 흐려지면 다 퍼졌을 때는 이미 보이지 않는다. 절반을 지나도록 또렷해야 한다.
+    expect(shockwaveAt(0.5).opacity).toBeCloseTo(full, 10);
+    expect(shockwaveAt(0.8).opacity).toBeLessThan(full);
+    expect(shockwaveAt(1).opacity).toBeCloseTo(0, 10);
+  });
+
+  it("hangs the ring on the board, hidden, with its resources tracked", () => {
+    const board = createBoardScene(THREE);
+
+    expect(board.scene.children).toContain(board.shockwave);
+    expect(board.shockwave.visible).toBe(false);
+    expect(board.disposables).toContain(board.shockwave.geometry);
+    expect(board.disposables).toContain(board.shockwave.material);
   });
 });
 

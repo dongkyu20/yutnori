@@ -21,6 +21,35 @@ const NODE_RADIUS = 0.062 * BOARD_WORLD_SIZE;
 const NODE_HEIGHT = 0.05;
 const PATH_WIDTH = 0.022 * BOARD_WORLD_SIZE;
 
+/**
+ * 잡기 충격파 고리. 도착 칸에는 잡은 말이 서 있고 수직으로 내려다보므로 말의 반지름
+ * (piece.ts의 PIECE_RADIUS = 0.042 * BOARD_WORLD_SIZE) 안쪽은 통째로 가려진다.
+ * 그래서 고리는 가장 작을 때의 안쪽 반지름부터 이미 그 원 바깥에 있다.
+ */
+export const SHOCKWAVE_INNER_RADIUS = 0.05 * BOARD_WORLD_SIZE;
+export const SHOCKWAVE_OUTER_RADIUS = 0.065 * BOARD_WORLD_SIZE;
+/** 다 퍼진 고리의 바깥 반지름. 칸 표식의 2.5배라 도착 칸을 넉넉히 넘어선다. */
+export const SHOCKWAVE_MAX_RADIUS = NODE_RADIUS * 2.5;
+/** 고리가 앉는 높이. 길과 칸 표식(길목 고리 포함)보다 위라 판에 파묻히지 않는다. */
+const SHOCKWAVE_HEIGHT = 0.16;
+const SHOCKWAVE_OPACITY = 0.85;
+/** 이 지점을 지나서야 사그라든다. 앞부분을 또렷하게 두어야 퍼지는 것이 읽힌다. */
+const SHOCKWAVE_FADE_FROM = 0.6;
+
+/**
+ * 퍼진 정도(0..1)를 고리의 배율과 투명도로 옮긴다. three를 쓰지 않으므로 Node에서 검증한다.
+ * 고리는 처음부터 말보다 크므로, 예전처럼 첫 프레임부터 흐려지게 두면 다 퍼져 보일 무렵에는
+ * 이미 아무것도 남지 않는다. 끝자락에서만 사그라들게 한다.
+ */
+export function shockwaveAt(spread: number): { scale: number; opacity: number } {
+  const t = Math.min(Math.max(spread, 0), 1);
+  const radius = SHOCKWAVE_OUTER_RADIUS + (SHOCKWAVE_MAX_RADIUS - SHOCKWAVE_OUTER_RADIUS) * t;
+  const fade = t <= SHOCKWAVE_FADE_FROM
+    ? 1
+    : 1 - (t - SHOCKWAVE_FADE_FROM) / (1 - SHOCKWAVE_FADE_FROM);
+  return { scale: radius / SHOCKWAVE_OUTER_RADIUS, opacity: SHOCKWAVE_OPACITY * fade };
+}
+
 /** 퍼센트 좌표를 월드로. x는 오른쪽, z는 화면 아래쪽, y는 판 위쪽이다. */
 export function nodeWorldPosition(nodeId: string): { x: number; y: number; z: number } {
   const percent = NODE_COORDINATES[nodeId] ?? NODE_COORDINATES[START_NODE_ID];
@@ -54,6 +83,8 @@ export interface BoardScene {
   camera: import("three").OrthographicCamera;
   /** 말을 담는 층. Task 5가 여기에 넣는다. */
   pieceLayer: import("three").Group;
+  /** 잡을 때만 켜는 충격파 고리. 자리와 배율은 연출이 정하고 크기 비율은 여기가 정한다. */
+  shockwave: import("three").Mesh;
   nodeCount: number;
   disposables: Array<{ dispose: () => void }>;
 }
@@ -148,6 +179,30 @@ function addArrows(
   });
 }
 
+/** 잡기 고리는 한 번 만들어 숨겨 둔다. 잡을 때만 켠다. */
+function addShockwave(
+  THREE: ThreeModule,
+  scene: import("three").Scene,
+  disposables: BoardScene["disposables"],
+): import("three").Mesh {
+  const geometry = new THREE.RingGeometry(SHOCKWAVE_INNER_RADIUS, SHOCKWAVE_OUTER_RADIUS, 48)
+    .rotateX(-Math.PI / 2);
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xffe6a8,
+    transparent: true,
+    opacity: SHOCKWAVE_OPACITY,
+    side: THREE.DoubleSide,
+    // 반투명한 겹침일 뿐이므로 깊이를 적지 않는다. 말이 고리 뒤에 숨지 않게 한다.
+    depthWrite: false,
+  });
+  disposables.push(geometry, material);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.y = SHOCKWAVE_HEIGHT;
+  mesh.visible = false;
+  scene.add(mesh);
+  return mesh;
+}
+
 export function createBoardScene(THREE: ThreeModule): BoardScene {
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
@@ -186,6 +241,7 @@ export function createBoardScene(THREE: ThreeModule): BoardScene {
 
   const pieceLayer = new THREE.Group();
   scene.add(pieceLayer);
+  const shockwave = addShockwave(THREE, scene, disposables);
 
-  return { scene, camera, pieceLayer, nodeCount, disposables };
+  return { scene, camera, pieceLayer, shockwave, nodeCount, disposables };
 }

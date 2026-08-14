@@ -3,7 +3,12 @@
 import { useEffect, useRef } from "react";
 import type { PublicGameState } from "../../shared/protocol";
 import { sideSlotOf } from "../sideColor";
-import { createBoardScene, nodeWorldPosition, type BoardScene } from "../three/boardScene";
+import {
+  createBoardScene,
+  nodeWorldPosition,
+  shockwaveAt,
+  type BoardScene,
+} from "../three/boardScene";
 import { impactAt, knockAt, timelineFor, walkAt } from "../three/moveAnimation";
 import { createPieceMesh, placePieceAt } from "../three/piece";
 
@@ -38,7 +43,6 @@ interface Stage {
   stones: Map<string, Stone>;
   /** 잡힌 말을 튕겨내는 동안만 사는 덩이. 권위 있는 상태에는 이미 없는 말이다. */
   ghosts: Stone[];
-  ring?: import("three").Mesh;
   lost: boolean;
 }
 
@@ -165,17 +169,6 @@ export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: B
       threeRef.current = THREE;
       stageRef.current = stage;
 
-      // 충격파 고리는 한 번 만들어 숨겨 둔다. 잡을 때만 켠다.
-      const ringGeometry = new THREE.RingGeometry(0.1, 0.16, 40).rotateX(-Math.PI / 2);
-      const ringMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffe6a8, transparent: true, opacity: 0.75, side: THREE.DoubleSide,
-      });
-      stage.board.disposables.push(ringGeometry, ringMaterial);
-      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-      ring.visible = false;
-      stage.board.scene.add(ring);
-      stage.ring = ring;
-
       const resize = () => {
         const size = Math.min(canvas.clientWidth, canvas.clientHeight);
         if (size === 0 || stage.lost) return;
@@ -291,13 +284,15 @@ export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: B
     const timeline = timelineFor(walkable.length, lastMove.capturedPieceIds.length);
     animatingRef.current([...lastMove.pieceIds, ...lastMove.capturedPieceIds]);
 
-    const ring = stage.ring;
-    if (ring) ring.position.set(destination.x, 0.06, destination.z);
+    // 고리의 높이는 판이 정한다. 연출은 어느 칸에서 퍼질지만 정한다.
+    const ring = stage.board.shockwave;
+    ring.position.x = destination.x;
+    ring.position.z = destination.z;
 
     const finish = () => {
       // 권위 있는 자리로 되돌리고, 잠깐 살렸던 말을 치운다.
       if (walker) placePieceAt(walker.mesh, nodeWorldPosition(walker.nodeId));
-      if (ring) ring.visible = false;
+      ring.visible = false;
       disposeGhosts(stage);
       if (!stage.lost) stage.renderer.render(stage.board.scene, stage.board.camera);
       animatingRef.current([]);
@@ -323,10 +318,11 @@ export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: B
       }
 
       const impact = impactAt(timeline, elapsed);
-      if (ring) {
-        ring.visible = impact > 0;
-        ring.scale.setScalar(0.4 + impact * 2.6);
-        (ring.material as import("three").MeshBasicMaterial).opacity = 0.75 * (1 - impact);
+      ring.visible = impact > 0;
+      if (ring.visible) {
+        const wave = shockwaveAt(impact);
+        ring.scale.setScalar(wave.scale);
+        (ring.material as import("three").MeshBasicMaterial).opacity = wave.opacity;
       }
 
       const knock = knockAt(timeline, elapsed);
@@ -359,7 +355,7 @@ export function BoardStage({ pieces, slots, lastMove, onActive, onAnimating }: B
       // stageRef로 다시 확인해 두 번 dispose하지 않게 막는다.
       if (!stageRef.current) return;
       disposeGhosts(stage);
-      if (ring) ring.visible = false;
+      ring.visible = false;
       animatingRef.current([]);
     };
   }, [lastMove, pieces, slots]);
