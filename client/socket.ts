@@ -23,7 +23,7 @@ export const PRODUCTION_SOCKET_RETRY_OPTIONS: SocketRetryOptions = {
 };
 
 interface ClientToServerEvents {
-  command: (command: unknown) => void;
+  command: (command: unknown, acknowledge?: () => void) => void;
 }
 
 interface ServerToClientEvents {

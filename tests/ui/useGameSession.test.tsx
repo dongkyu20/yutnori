@@ -32,6 +32,7 @@ class LeavePendingSocket {
   connectCalls = 0;
   disconnectCalls = 0;
   readonly commands: unknown[] = [];
+  private readonly acknowledgements: Array<() => void> = [];
   private readonly handlers = new Map<string, Array<(payload: unknown) => void>>();
   readonly io = {
     on: () => this.io,
@@ -45,9 +46,16 @@ class LeavePendingSocket {
     return this;
   }
 
-  emit(event: string, payload: unknown): this {
-    if (event === "command") this.commands.push(payload);
+  emit(event: string, payload: unknown, acknowledge?: () => void): this {
+    if (event === "command") {
+      this.commands.push(payload);
+      if (acknowledge) this.acknowledgements.push(acknowledge);
+    }
     return this;
+  }
+
+  acknowledgeLast(): void {
+    this.acknowledgements.at(-1)?.();
   }
 
   connect(): this {
@@ -300,7 +308,7 @@ describe("useGameSession terminal reconnect errors", () => {
     unmount();
   });
 
-  it("restores the room and token when the server does not confirm leave in time", () => {
+  it("keeps leave pending and accepts a delayed acknowledgement after the warning", () => {
     vi.useFakeTimers();
     const reconnectToken = "resume-token";
     window.localStorage.setItem(RECONNECT_TOKEN_KEY, reconnectToken);
@@ -315,10 +323,17 @@ describe("useGameSession terminal reconnect errors", () => {
     expect(result.current.snapshot).toBeNull();
     act(() => vi.advanceTimersByTime(1_500));
 
-    expect(result.current.snapshot?.roomCode).toBe(issuedSession.snapshot.roomCode);
+    expect(result.current.snapshot).toBeNull();
     expect(result.current.error?.code).toBe("LEAVE_TIMEOUT");
     expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBe(reconnectToken);
     expect(socket.disconnectCalls).toBe(0);
+    expect(socket.commands).toHaveLength(2);
+    expect(socket.commands[1]).toEqual(socket.commands[0]);
+
+    act(() => socket.acknowledgeLast());
+    expect(window.localStorage.getItem(RECONNECT_TOKEN_KEY)).toBeNull();
+    expect(result.current.snapshot).toBeNull();
+    expect(socket.auth).toEqual({});
     unmount();
   });
 

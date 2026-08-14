@@ -33,7 +33,7 @@ interface SocketData {
 }
 
 interface ClientToServerEvents {
-  command: (raw: unknown) => void;
+  command: (raw: unknown, acknowledge?: () => void) => void;
 }
 
 interface ServerToClientEvents {
@@ -223,7 +223,7 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
       }
     }
 
-    socket.on("command", (raw: unknown) => {
+    socket.on("command", (raw: unknown, acknowledge?: () => void) => {
       const now = rateLimit.now();
       const result = parseClientCommand(raw);
       const bypassCommandQuota = result.success
@@ -276,7 +276,10 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
         }
         handleValidatedCommand(io, roomService, socket, result.data);
         if (kickedPlayerId) evictPlayer(kickedPlayerId);
-        if (leavingPlayerId) evictPlayer(leavingPlayerId);
+        if (leavingPlayerId) {
+          if (typeof acknowledge === "function") acknowledge();
+          setImmediate(() => evictPlayer(leavingPlayerId));
+        }
       } catch (error) {
         emitError(socket, mapError(error));
       }

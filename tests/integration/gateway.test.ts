@@ -506,13 +506,19 @@ describe("Socket.IO gateway", () => {
     const { host, guest, guestSession, snapshot } = await createAndJoin(url);
     const hostSnapshotEvent = event<PublicRoomSnapshot>(host, "snapshot");
     const leftEvent = event(guest, "disconnect");
-
-    guest.emit("command", {
-      type: "LEAVE_ROOM",
-      roomVersion: snapshot.version,
-      requestId: requestId(9),
+    const acknowledged = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("Timed out waiting for leave acknowledgement")), 2_000);
+      guest.emit("command", {
+        type: "LEAVE_ROOM",
+        roomVersion: snapshot.version,
+        requestId: requestId(9),
+      }, () => {
+        clearTimeout(timeout);
+        resolve();
+      });
     });
 
+    await acknowledged;
     const remaining = await hostSnapshotEvent;
     expect(remaining.players.some((player) => player.id === guestSession.playerId)).toBe(false);
     // 소켓까지 놓아 주어야 남은 표로 다시 붙지 않는다.

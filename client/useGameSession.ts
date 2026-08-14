@@ -77,6 +77,8 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
   const snapshotRef = useRef<PublicRoomSnapshot | null>(null);
   // 나가는 중. 이 사이에 오는 방 소식은 이미 내 것이 아니므로 받지 않는다.
   const leavingRef = useRef(false);
+  // 서버 확인 뒤 옛 연결이 닫히면, 그때 이름 없는 새 로비 연결을 연다.
+  const leaveConfirmedRef = useRef(false);
   // 전송 도중 연결이 끊기면 같은 요청 ID로 다시 보내 서버의 중복 방지를 그대로 쓴다.
   const leaveCommandRef = useRef<Extract<InRoomCommand, { type: "LEAVE_ROOM" }> | null>(null);
   const leaveTimerRef = useRef<number | null>(null);
@@ -104,9 +106,10 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
     setError(null);
   }, [clearReactionState]);
 
-  /** 거절·시간 초과에는 보존한 방을 다시 보여 주어 재시도할 수 있게 한다. */
+  /** 서버가 거절하면 보존한 방을 다시 보여 주어 재시도할 수 있게 한다. */
   const cancelLeaving = useCallback((nextError: ServerError): void => {
     leavingRef.current = false;
+    leaveConfirmedRef.current = false;
     leaveCommandRef.current = null;
     if (leaveTimerRef.current !== null) {
       window.clearTimeout(leaveTimerRef.current);
@@ -120,6 +123,7 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
   /** 옛 소켓을 놓고 이름 없는 새 소켓으로 로비에 선다. */
   const finishLeaving = useCallback((): void => {
     leavingRef.current = false;
+    leaveConfirmedRef.current = false;
     leaveCommandRef.current = null;
     if (leaveTimerRef.current !== null) {
       window.clearTimeout(leaveTimerRef.current);
@@ -137,6 +141,35 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
     socket.connect();
   }, [clearRoomState]);
 
+  /** 나가기 완료는 확정하되, 옛 연결의 종료 확인 뒤 새 로비 연결을 연다. */
+  const confirmLeaving = useCallback((): void => {
+    if (!leavingRef.current) return;
+    leavingRef.current = false;
+    leaveConfirmedRef.current = true;
+    leaveCommandRef.current = null;
+    if (leaveTimerRef.current !== null) {
+      window.clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+    clearRoomState();
+    const socket = socketRef.current;
+    if (!socket) {
+      leaveConfirmedRef.current = false;
+      setConnectionState("offline");
+      return;
+    }
+    socket.auth = {};
+    setConnectionState("connecting");
+  }, [clearRoomState]);
+
+  const sendPendingLeave = useCallback((socket: GameSocket): void => {
+    const pendingLeave = leaveCommandRef.current;
+    if (!leavingRef.current || !pendingLeave) return;
+    socket.emit("command", pendingLeave, () => {
+      if (leavingRef.current) confirmLeaving();
+    });
+  }, [confirmLeaving]);
+
   useEffect(() => {
     const reactionTimers = reactionTimersRef.current;
     const reconnectToken = readReconnectToken();
@@ -145,10 +178,9 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
 
     const markReconnecting = () => setConnectionState("reconnecting");
     const markConnected = () => {
-      const pendingLeave = leaveCommandRef.current;
-      if (leavingRef.current && pendingLeave) {
+      if (leavingRef.current && leaveCommandRef.current) {
         setConnectionState("connecting");
-        socket.emit("command", pendingLeave);
+        sendPendingLeave(socket);
         return;
       }
       setConnectionState("connected");
@@ -161,6 +193,12 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
     socket.on("connect", markConnected);
     socket.on("connect_error", markReconnecting);
     socket.on("disconnect", (reason) => {
+      if (leaveConfirmedRef.current) {
+        leaveConfirmedRef.current = false;
+        setConnectionState("connecting");
+        socket.connect();
+        return;
+      }
       if (leavingRef.current) {
         // Socket.IO 서버가 직접 끊은 경우만 자리 삭제의 확인으로 본다.
         if (reason === "io server disconnect") finishLeaving();
@@ -223,6 +261,7 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
         leaveTimerRef.current = null;
       }
       leavingRef.current = false;
+      leaveConfirmedRef.current = false;
       leaveCommandRef.current = null;
       for (const timer of reactionTimers.values()) window.clearTimeout(timer);
       reactionTimers.clear();
@@ -232,7 +271,7 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [socketFactory, cancelLeaving, clearRoomState, finishLeaving]);
+  }, [socketFactory, cancelLeaving, clearRoomState, finishLeaving, sendPendingLeave]);
 
   const emit = useCallback((command: unknown): boolean => {
     const socket = socketRef.current;
@@ -271,15 +310,23 @@ export function useGameSession(options: UseGameSessionOptions = {}): GameSession
     const command = { type: "LEAVE_ROOM", roomVersion, requestId: newRequestId() } as const;
     leavingRef.current = true;
     leaveCommandRef.current = command;
-    socket.emit("command", command);
+    sendPendingLeave(socket);
     // 화면은 기다리지 않고 입장 로비로 옮기되, 서버 확인 전에는 표를 버리지 않는다.
     hideRoomState();
     setConnectionState("connecting");
-    leaveTimerRef.current = window.setTimeout(
-      () => cancelLeaving(leaveTimeoutError()),
-      LEAVE_GRACE_MS,
-    );
-  }, [cancelLeaving, hideRoomState]);
+    leaveTimerRef.current = window.setTimeout(() => {
+      leaveTimerRef.current = null;
+      if (!leavingRef.current) return;
+      setError(leaveTimeoutError());
+      const currentSocket = socketRef.current;
+      if (currentSocket?.connected) {
+        sendPendingLeave(currentSocket);
+        setConnectionState("connecting");
+      } else {
+        setConnectionState("reconnecting");
+      }
+    }, LEAVE_GRACE_MS);
+  }, [hideRoomState, sendPendingLeave]);
 
   return { playerId, snapshot, error, connectionState, reactions, createRoom, joinRoom, sendCommand, leaveRoom };
 }
