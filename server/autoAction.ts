@@ -1,6 +1,6 @@
 import { pendingThrowChoices } from "./game/reducer";
 import type { GameCommand, GameState } from "./game/types";
-import { throwYut } from "./game/yut";
+import { createAnimationSeed, throwYut } from "./game/yut";
 
 function randomIndex(length: number, random: () => number): number {
   return Math.min(length - 1, Math.floor(random() * length));
@@ -16,6 +16,7 @@ export function chooseAutoCommand(state: GameState, random: () => number): GameC
       type: "THROW",
       actorId: state.currentPlayerId,
       outcome: throwYut(random),
+      animationSeed: createAnimationSeed(random),
     };
   }
 

@@ -15,7 +15,7 @@ import {
   toPublicGameState,
 } from "./game/reducer";
 import type { GameState } from "./game/types";
-import { throwYut } from "./game/yut";
+import { createAnimationSeed, throwYut } from "./game/yut";
 
 const ROOM_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const DEFAULT_ACTION_TIMEOUT_MS = 45_000;
@@ -364,7 +364,7 @@ export class RoomService {
           type: "THROW",
           actorId: actor.id,
           outcome: throwYut(this.options.random),
-          ...(command.power ? { power: command.power } : {}),
+          animationSeed: createAnimationSeed(this.options.random),
         });
         return;
       case "SELECT_PIECE":

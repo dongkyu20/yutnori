@@ -518,21 +518,23 @@ describe("RoomService timers and cleanup", () => {
       eventId: "event-1",
       result: "YUT",
       sticks: [true, true, true, true],
-      // 힘을 고르지 않았으면 보통으로 던진 것으로 적어 보낸다.
-      power: "normal",
+      animationSeed: expect.any(String),
     });
   });
 
-  it("던진 사람이 고른 힘을 모두에게 그대로 되돌려 준다", () => {
-    // 각자 제 화면에서 힘을 정하면 한 번의 던지기를 저마다 다른 높이로 보게 된다.
-    const service = new RoomService(new FakeClock().options(() => 0.1));
+  it("같은 결과에도 던질 때마다 새 연출 시드를 만든다", () => {
+    const queuedRandoms: number[] = [];
+    const service = new RoomService(new FakeClock().options(() => queuedRandoms.shift() ?? 0.1));
     const [host] = readyIndividualGame(service);
 
-    const thrown = dispatch(service, host.playerId, host.snapshot, { type: "THROW_YUT", power: "hard" });
+    queuedRandoms.push(0.1, 0.1, 0.1, 0.1, 0.2, 0.3);
+    const first = dispatch(service, host.playerId, host.snapshot, { type: "THROW_YUT" });
+    queuedRandoms.push(0.1, 0.1, 0.1, 0.1, 0.8, 0.9);
+    const second = dispatch(service, host.playerId, first, { type: "THROW_YUT" });
 
-    expect(thrown.game?.lastThrow?.power).toBe("hard");
-    // 힘은 보기만 바꾼다. 나온 결과는 서버가 굴린 그대로다.
-    expect(thrown.game?.lastThrow?.result).toBe("YUT");
+    expect(first.game?.lastThrow?.result).toBe("YUT");
+    expect(second.game?.lastThrow?.result).toBe("YUT");
+    expect(second.game?.lastThrow?.animationSeed).not.toBe(first.game?.lastThrow?.animationSeed);
   });
 
   it("deletes an empty waiting room after ten minutes", () => {

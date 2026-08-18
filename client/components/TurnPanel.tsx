@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { PublicGameState, ThrowPower } from "../../shared/protocol";
+import type { PublicGameState } from "../../shared/protocol";
 import { settleMsFor } from "../three/yutStick";
 import { YutSticks } from "./YutSticks";
 
@@ -9,19 +9,12 @@ interface TurnPanelProps {
   game: PublicGameState;
   currentPlayerNickname: string;
   isCurrentPlayer: boolean;
-  onThrow: (power: ThrowPower) => void;
+  onThrow: () => void;
 }
 
 const RESULT_NAMES: Record<NonNullable<PublicGameState["lastThrow"]>["result"], string> = {
   BACK_DO: "빽도", DO: "도", GAE: "개", GEOL: "걸", YUT: "윷", MO: "모",
 };
-
-/** 던지는 힘. 보기만 바뀌고 무엇이 나올지는 달라지지 않는다. */
-const POWER_CHOICES: ReadonlyArray<{ power: ThrowPower; label: string }> = [
-  { power: "soft", label: "살살" },
-  { power: "normal", label: "보통" },
-  { power: "hard", label: "힘껏" },
-];
 
 const STAGE_GUIDANCE: Record<PublicGameState["turnStage"], string> = {
   AWAITING_THROW: "윷을 던지세요",
@@ -45,9 +38,7 @@ export function TurnPanel({
   onThrow,
 }: TurnPanelProps) {
   const currentThrowEventId = game.lastThrow?.eventId ?? null;
-  // 내가 다음에 던질 힘. 실제 연출은 서버가 되돌려 준 힘으로 하므로 모두가 같은 높이를 본다.
-  const [power, setPower] = useState<ThrowPower>("normal");
-  const thrownPower = game.lastThrow?.power ?? "normal";
+  const currentAnimationSeed = game.lastThrow?.animationSeed ?? "resting";
   const [throwState, setThrowState] = useState(() => ({ eventId: currentThrowEventId, rolling: false }));
 
   // 새 던지기는 그리는 그 자리에서 굴리기 시작한다. 효과로 미루면 결과 글자가
@@ -63,11 +54,11 @@ export function TurnPanel({
     if (!throwState.rolling) return;
     const timer = window.setTimeout(
       () => setThrowState((current) => ({ ...current, rolling: false })),
-      // 던지기마다 손버릇이 달라 연출 길이도 다르다. 그 던지기의 길이를 그대로 쓴다.
-      settleMsFor(throwState.eventId ?? "", thrownPower),
+      // 서버 시드마다 물리 궤적과 길이가 다르므로 그 던지기의 길이를 그대로 쓴다.
+      settleMsFor(currentAnimationSeed),
     );
     return () => window.clearTimeout(timer);
-  }, [throwState.eventId, throwState.rolling, thrownPower]);
+  }, [currentAnimationSeed, throwState.eventId, throwState.rolling]);
 
   // 윷가락이 멎기 전에 결과를 글자로 알려 주면 굴러가는 윷을 볼 까닭이 없어진다.
   const resultText = animating
@@ -88,7 +79,7 @@ export function TurnPanel({
           sticks={game.lastThrow?.sticks ?? [false, false, false, false]}
           animating={animating}
           throwKey={currentThrowEventId ?? "no-throw"}
-          power={thrownPower}
+          animationSeed={currentAnimationSeed}
         />
       </section>
       {game.pendingThrows.length > 0 && (
@@ -111,26 +102,11 @@ export function TurnPanel({
       )}
       {game.turnStage === "AWAITING_THROW" && (
         <div className="throw-controls">
-          <fieldset className="throw-power" disabled={!isCurrentPlayer}>
-            <legend>던지는 힘</legend>
-            {POWER_CHOICES.map((choice) => (
-              <button
-                key={choice.power}
-                type="button"
-                className="throw-power__option"
-                aria-pressed={power === choice.power}
-                onClick={() => setPower(choice.power)}
-              >
-                {choice.label}
-              </button>
-            ))}
-          </fieldset>
-          <p className="throw-power__hint">높이만 달라집니다. 나오는 결과와는 무관합니다.</p>
           <button
             type="button"
             className="turn-panel__throw"
             disabled={!isCurrentPlayer}
-            onClick={() => onThrow(power)}
+            onClick={() => onThrow()}
           >
             윷 던지기
           </button>

@@ -22,6 +22,16 @@ export function throwYut(random: () => number = Math.random): ThrowOutcome {
   return { sticks, result, distance, bonusThrows };
 }
 
+function randomWord(random: () => number): string {
+  const unit = Math.min(Math.max(random(), 0), 1 - Number.EPSILON);
+  return Math.floor(unit * 0x1_0000_0000).toString(36).padStart(7, "0");
+}
+
+/** 결과 난수와 별도로 뽑아 모든 참가자가 같은 무작위 연출을 재생하게 한다. */
+export function createAnimationSeed(random: () => number = Math.random): string {
+  return `${randomWord(random)}-${randomWord(random)}`;
+}
+
 /**
  * 던지자마자 한 번 더 던지게 해 주는 결과인가(윷·모).
  * 위 표에서 바로 읽으므로 표를 고치면 이 판단도 함께 따라온다.

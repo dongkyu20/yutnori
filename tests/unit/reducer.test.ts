@@ -28,7 +28,12 @@ const throwYut = (
   distance: ThrowOutcome["distance"],
   bonusThrows: ThrowOutcome["bonusThrows"] = 0,
 ): GameState =>
-  applyGameCommand(state, { type: "THROW", actorId, outcome: outcome(result, distance, bonusThrows) });
+  applyGameCommand(state, {
+    type: "THROW",
+    actorId,
+    outcome: outcome(result, distance, bonusThrows),
+    animationSeed: `seed-${state.eventSequence + 1}`,
+  });
 
 /** 아직 쓰지 않은 결과 중 지정한 것으로 말을 옮긴다. 기본값은 가장 먼저 던진 결과다. */
 const movePiece = (
@@ -100,7 +105,12 @@ describe("game reducer", () => {
     const state = individualGame();
 
     expect(() =>
-      applyGameCommand(state, { type: "THROW", actorId: "B1", outcome: outcome("DO", 1) }),
+      applyGameCommand(state, {
+        type: "THROW",
+        actorId: "B1",
+        outcome: outcome("DO", 1),
+        animationSeed: "out-of-turn-seed",
+      }),
     ).toThrowError("현재 차례");
     expect(state.turnStage).toBe("AWAITING_THROW");
   });

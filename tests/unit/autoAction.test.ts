@@ -26,6 +26,7 @@ describe("chooseAutoCommand", () => {
         distance: 4,
         bonusThrows: 1,
       },
+      animationSeed: "073plsp-073plsp",
     });
   });
 

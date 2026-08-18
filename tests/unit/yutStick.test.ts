@@ -8,11 +8,7 @@ import {
   layoutFor,
   restHeight,
   rollHeight,
-  liftScaleOf,
-  settleMsFor,
   settleMsOf,
-  styleFor,
-  TOSS_STYLES,
   restRoll,
   tossLift,
   CONTENT,
@@ -24,29 +20,7 @@ import {
 } from "../../client/three/yutStick";
 
 const EPS = 1e-6;
-
-/** 그 손버릇대로 던졌다면 가락이 가졌을 값. 손버릇 하나하나를 따로 보기 위한 것이다. */
-function styleLayoutFor(style: (typeof TOSS_STYLES)[number], index: number, count: number) {
-  const middle = (count - 1) / 2;
-  const step = style.order === "뒤부터"
-    ? count - 1 - index
-    : style.order === "바깥부터"
-      ? Math.round(middle - Math.abs(index - middle))
-      : index;
-  return {
-    turns: style.minTurns,
-    lift: style.lift,
-    bounce: style.bounce,
-    bounces: style.bounces,
-    yawTurns: style.yawTurns,
-    wobble: style.wobble,
-    pitch: style.pitch,
-    drift: style.drift,
-    driftZ: style.driftZ,
-    delayMs: step * style.staggerMs,
-    tossMs: style.tossMs,
-  };
-}
+const PHYSICS_SEEDS = Array.from({ length: 24 }, (unusedValue, index) => `physics-seed-${index}`);
 
 /** 조각 하나의 정점을 [x, y, z] 배열로 펼친다. */
 function vertices(geometry: THREE.BufferGeometry): Array<[number, number, number]> {
@@ -186,23 +160,16 @@ describe("내려앉은 자세", () => {
   });
 });
 
-describe("던지는 손버릇", () => {
-  it("던질 때마다 손버릇이 달라지되 같은 던지기는 늘 같다", () => {
-    // 자리만 흩어지고 동작이 늘 같으면 백 번을 던져도 한 번 본 것과 같다.
-    expect(styleFor("event-7")).toEqual(styleFor("event-7"));
-    const picked = new Set(
-      Array.from({ length: 120 }, (unusedValue, index) => styleFor("event-" + index).id),
+describe("서버 시드 물리 궤적", () => {
+  it("몇 개의 프리셋 대신 연속적으로 다른 물리 궤적을 만든다", () => {
+    const firstSticks = Array.from(
+      { length: 80 },
+      (unusedValue, index) => layoutFor(`server-seed-${index}`, 4)[0],
     );
-    expect(picked.size).toBeGreaterThan(1);
-    // 준비한 손버릇은 모두 언젠가 나와야 한다. 안 나오는 것은 없는 것과 같다.
-    expect(picked).toEqual(new Set(TOSS_STYLES.map((style) => style.id)));
-  });
 
-  it("손버릇마다 높이와 걸리는 시간이 서로 다르다", () => {
-    const lifts = new Set(TOSS_STYLES.map((style) => style.lift));
-    const spans = new Set(TOSS_STYLES.map((style) => style.tossMs));
-    expect(lifts.size).toBeGreaterThan(1);
-    expect(spans.size).toBeGreaterThan(1);
+    expect(new Set(firstSticks.map((spot) => spot.tossMs)).size).toBeGreaterThan(40);
+    expect(new Set(firstSticks.map((spot) => spot.touchdown)).size).toBeGreaterThan(40);
+    expect(new Set(firstSticks.map((spot) => spot.bounce)).size).toBeGreaterThan(40);
   });
 
   it("그 던지기의 연출 길이를 알려 준다", () => {
@@ -216,17 +183,12 @@ describe("던지는 손버릇", () => {
   });
 });
 
-describe("손버릇 하나하나", () => {
-  // 어느 손버릇으로 던지든 지켜야 하는 것들. 새 축을 더할 때마다 여기서 걸린다.
-  it.each(TOSS_STYLES.map((style) => [style.id, style] as const))(
+describe("무작위 궤적 안전성", () => {
+  it.each(PHYSICS_SEEDS)(
     "%s은 결과 면으로 정확히 내려앉는다",
-    (unusedId, style) => {
+    (seed) => {
       const flags = [true, false, true, false];
-      const key = `throw-${style.id}`;
-      const layout = layoutFor(key, 4).map((spot, index) => ({
-        ...spot,
-        ...styleLayoutFor(style, index, 4),
-      }));
+      const layout = layoutFor(seed, 4);
       const views = makeViews(4);
       const rested = makeViews(4);
 
@@ -239,17 +201,13 @@ describe("손버릇 하나하나", () => {
     },
   );
 
-  it.each(TOSS_STYLES.map((style) => [style.id, style] as const))(
+  it.each(PHYSICS_SEEDS)(
     "%s은 눕힌 자세에서 던지기 시작한다",
-    (unusedId, style) => {
+    (seed) => {
       // 던지기 직전 화면에는 눕혀 둔 윷이 있다. 첫 칸이 그와 다르면
       // 굴러가기 전에 다른 자세가 한 번 번쩍인다. 세워 던지는 손버릇에서 그랬다.
       const flags = [true, false, true, false];
-      const key = `start-${style.id}`;
-      const layout = layoutFor(key, 4).map((spot, index) => ({
-        ...spot,
-        ...styleLayoutFor(style, index, 4),
-      }));
+      const layout = layoutFor(seed, 4);
       const views = makeViews(4);
 
       applyToss(views, flags, layout, 0);
@@ -260,13 +218,10 @@ describe("손버릇 하나하나", () => {
     },
   );
 
-  it("멍석 아래로는 어느 손버릇도 파고들지 않는다", () => {
+  it("무작위 궤적이 멍석 아래로 파고들지 않는다", () => {
     const flags = [true, false, true, false];
-    TOSS_STYLES.forEach((style) => {
-      const layout = layoutFor(`throw-${style.id}`, 4).map((spot, index) => ({
-        ...spot,
-        ...styleLayoutFor(style, index, 4),
-      }));
+    PHYSICS_SEEDS.forEach((seed) => {
+      const layout = layoutFor(seed, 4);
       const views = makeViews(4);
       for (let elapsed = 0; elapsed <= settleMsOf(layout); elapsed += 10) {
         applyToss(views, flags, layout, elapsed);
@@ -277,84 +232,22 @@ describe("손버릇 하나하나", () => {
     });
   });
 
-  it("손버릇마다 움직이는 결이 다르다", () => {
-    // 값 하나만 다른 손버릇을 여럿 두면 이름만 늘어날 뿐 눈에는 같은 것이 반복된다.
-    expect(TOSS_STYLES.length).toBeGreaterThanOrEqual(10);
-    const shapes = new Set(
-      TOSS_STYLES.map((style) => [
-        style.lift > 1 ? "높음" : style.lift > 0.7 ? "보통" : "낮음",
-        style.minTurns >= 4 ? "많이구름" : "적게구름",
-        style.yawTurns,
-        style.pitch > 0 ? "세움" : "눕힘",
-        style.driftZ > 0 ? "앞뒤" : "좌우",
-        style.bounces,
-        style.order,
-        style.staggerMs === 0 ? "한꺼번에" : "차례로",
-      ].join("/")),
-    );
-    // 열 가지가 저마다 다른 조합이어야 한다.
-    expect(shapes.size).toBe(TOSS_STYLES.length);
+  it("모든 무작위 물리값을 화면 안의 안전한 범위로 제한한다", () => {
+    const spots = PHYSICS_SEEDS.flatMap((seed) => layoutFor(seed, 4));
+    spots.forEach((spot) => {
+      expect(spot.delayMs).toBeGreaterThanOrEqual(0);
+      expect(spot.delayMs).toBeLessThanOrEqual(120);
+      expect(spot.tossMs).toBeGreaterThanOrEqual(600);
+      expect(spot.tossMs).toBeLessThanOrEqual(1_150);
+      expect(spot.lift).toBeGreaterThan(0.45);
+      expect(spot.lift).toBeLessThan(1.4);
+      expect(spot.touchdown).toBeGreaterThanOrEqual(0.55);
+      expect(spot.touchdown).toBeLessThanOrEqual(0.94);
+    });
   });
 });
 
-describe("던지는 힘", () => {
-  it("힘껏 던지면 더 높이 뜨고 살살 던지면 낮게 뜬다", () => {
-    // 높이는 던지는 사람이 고른다. 세 단계가 눈에 띄게 달라야 고르는 재미가 있다.
-    const soft = layoutFor("event-9", 4, "soft");
-    const normal = layoutFor("event-9", 4, "normal");
-    const hard = layoutFor("event-9", 4, "hard");
-
-    soft.forEach((spot, index) => {
-      expect(spot.lift).toBeLessThan(normal[index].lift);
-      expect(hard[index].lift).toBeGreaterThan(normal[index].lift);
-    });
-    // 힘은 높이와 구르는 결만 건드린다. 흩어져 앉는 자리는 그 던지기의 것이라 그대로다.
-    soft.forEach((spot, index) => {
-      expect(spot.x).toBe(normal[index].x);
-      expect(spot.z).toBe(normal[index].z);
-      expect(spot.yaw).toBe(normal[index].yaw);
-    });
-  });
-
-  it("살살 던지면 일찍 내려앉아 바닥을 구르다 멎는다", () => {
-    // 낮게 뜬 채 공중에서 빠르게 돌면 붕 떠 보인다. 살살 던진 윷은 먼저 닿고 굴러야 한다.
-    const flags = [true, false, true, false];
-    const layout = layoutFor("event-roll", 4, "soft");
-    const views = makeViews(4);
-    const settle = settleMsOf(layout);
-
-    // 절반쯤 지난 뒤에는 이미 멍석에 닿아 있다.
-    let rolledFrames = 0;
-    let turnedWhileRolling = 0;
-    let previousRoll = Number.NaN;
-    for (let elapsed = Math.round(settle * 0.7); elapsed <= settle; elapsed += 10) {
-      applyToss(views, flags, layout, elapsed);
-      const group = views[0];
-      // 축은 굴러가는 자세만큼만 떠 있다. 그 이상 뜨면 아직 나는 중이다.
-      expect(group.position.y).toBeLessThanOrEqual(RADIUS + 1e-6);
-      rolledFrames += 1;
-      if (!Number.isNaN(previousRoll) && Math.abs(group.rotation.x - previousRoll) > 1e-4) {
-        turnedWhileRolling += 1;
-      }
-      previousRoll = group.rotation.x;
-    }
-    expect(rolledFrames).toBeGreaterThan(3);
-    // 닿은 뒤에도 한동안 구른다. 닿자마자 굳으면 미끄러지듯 멎어 어색하다.
-    expect(turnedWhileRolling).toBeGreaterThan(2);
-  });
-
-  it("살살 던지면 공중에서 덜 돈다", () => {
-    const soft = layoutFor("event-roll", 4, "soft");
-    const hard = layoutFor("event-roll", 4, "hard");
-    soft.forEach((spot, index) => {
-      expect(spot.turns).toBeLessThanOrEqual(hard[index].turns);
-      expect(spot.turns).toBeGreaterThanOrEqual(1);
-      expect(Number.isInteger(spot.turns)).toBe(true);
-    });
-    expect(soft.reduce((sum, spot) => sum + spot.turns, 0))
-      .toBeLessThan(hard.reduce((sum, spot) => sum + spot.turns, 0));
-  });
-
+describe("굴림 높이", () => {
   it("구르는 자세만큼만 축이 떠 있다", () => {
     // 배가 아래면 낮게, 옆이나 등이 아래면 반지름만큼. 이걸 무시하면 구르다 멍석을 파고든다.
     expect(rollHeight(0)).toBeCloseTo(CUT_DEPTH, 6);
@@ -362,16 +255,6 @@ describe("던지는 힘", () => {
     expect(rollHeight(Math.PI / 2)).toBeCloseTo(RADIUS, 6);
   });
 
-  it("힘껏 던지면 멎는 데 걸리는 시간도 길어진다", () => {
-    expect(settleMsFor("event-9", "hard")).toBeGreaterThan(settleMsFor("event-9", "normal"));
-    expect(settleMsFor("event-9", "soft")).toBeLessThan(settleMsFor("event-9", "normal"));
-  });
-
-  it("힘을 알려 주지 않으면 보통으로 던진다", () => {
-    // 시간이 다 되어 서버가 알아서 던질 때는 고른 힘이 없다.
-    expect(layoutFor("event-9", 4)).toEqual(layoutFor("event-9", 4, "normal"));
-    expect(liftScaleOf("normal")).toBe(1);
-  });
 });
 
 describe("던져 굴리기", () => {

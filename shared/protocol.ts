@@ -2,8 +2,6 @@ export type GameMode = "individual" | "team";
 export type TeamId = "A" | "B" | "C" | "D";
 export type RoomPhase = "waiting" | "playing" | "finished";
 export type YutResult = "BACK_DO" | "DO" | "GAE" | "GEOL" | "YUT" | "MO";
-/** 던지는 힘. 보기만 바꾸며 무엇이 나올지에는 영향이 없다. */
-export type ThrowPower = "soft" | "normal" | "hard";
 export type ClientCommand =
   | { type: "CREATE_ROOM"; nickname: string; mode: GameMode }
   | { type: "JOIN_ROOM"; nickname: string; roomCode: string }
@@ -17,7 +15,7 @@ export type ClientCommand =
   | { type: "START_GAME"; roomVersion: number; requestId: string }
   /** 경기가 끝난 방을 같은 참가자와 팀 그대로 대기 상태로 되돌린다. */
   | { type: "PLAY_AGAIN"; roomVersion: number; requestId: string }
-  | { type: "THROW_YUT"; power?: ThrowPower; roomVersion: number; requestId: string }
+  | { type: "THROW_YUT"; roomVersion: number; requestId: string }
   | { type: "SELECT_PIECE"; throwId: string; pieceId: string; roomVersion: number; requestId: string }
   | { type: "SELECT_ROUTE"; routeId: string; roomVersion: number; requestId: string }
   | { type: "REACT"; emoji: "\uD83D\uDC4F" | "\uD83D\uDD25" | "\uD83D\uDE2E" | "\uD83C\uDF89" };
@@ -49,8 +47,8 @@ export interface PublicGameState {
     eventId: string;
     result: YutResult;
     sticks: [boolean, boolean, boolean, boolean];
-    /** 던진 사람이 고른 힘. 모두가 같은 높이로 연출하도록 서버가 되돌려 준다. */
-    power: ThrowPower;
+    /** 서버가 정한 연출 시드. 모든 참가자가 같은 무작위 물리 궤적을 재생한다. */
+    animationSeed: string;
   } | null;
   /** 마지막 이동의 자취. 판이 말을 걸어가게 하고 잡기 연출을 재생하는 데 쓴다. */
   lastMove: {

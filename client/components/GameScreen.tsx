@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { InRoomCommand, PublicRoomSnapshot, ServerError, ThrowPower } from "../../shared/protocol";
+import type { InRoomCommand, PublicRoomSnapshot, ServerError } from "../../shared/protocol";
 import type { ConnectionState } from "../useGameSession";
 import { newRequestId } from "../requestId";
 import { sideClass, sideName, sideSlotOf, sideSlots } from "../sideColor";
@@ -144,7 +144,7 @@ export function GameScreen({
             game={game}
             currentPlayerNickname={currentPlayer?.nickname ?? game.currentPlayerId}
             isCurrentPlayer={playerId === game.currentPlayerId}
-            onThrow={(power: ThrowPower) => sendCommand({ type: "THROW_YUT", power, ...metadata() })}
+            onThrow={() => sendCommand({ type: "THROW_YUT", ...metadata() })}
           />
           <EmojiReactions
             reactions={reactions}

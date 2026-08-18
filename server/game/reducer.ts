@@ -81,7 +81,7 @@ export function createGame(input: CreateGameInput): GameState {
     pieces: input.mode === "team" ? createTeamPieces(players) : createIndividualPieces(players),
     lastThrow: null,
     lastThrowEventId: null,
-    lastThrowPower: "normal",
+    lastThrowAnimationSeed: null,
     lastMove: null,
     pendingThrows: [],
     selectedThrowId: null,
@@ -142,7 +142,7 @@ export function removePlayer(state: GameState, playerId: string, nickname: strin
       throwsRemaining: 0,
       lastThrow: null,
       lastThrowEventId: null,
-      lastThrowPower: "normal",
+      lastThrowAnimationSeed: null,
       lastMove: null,
       winnerId,
     };
@@ -159,7 +159,7 @@ export function removePlayer(state: GameState, playerId: string, nickname: strin
     // 떠난 사람의 던지기와 이동은 더 이상 연출할 것이 없다.
     lastThrow: null,
     lastThrowEventId: null,
-    lastThrowPower: "normal",
+    lastThrowAnimationSeed: null,
     lastMove: null,
   };
 }
@@ -382,8 +382,7 @@ function applyThrow(state: GameState, command: Extract<GameCommand, { type: "THR
       turnStage: "AWAITING_THROW",
       lastThrow: outcome,
       lastThrowEventId: throwEventId,
-      // 서버가 시간에 밀려 대신 던질 때는 고른 힘이 없다. 그때는 보통으로 던진다.
-      lastThrowPower: command.power ?? "normal",
+      lastThrowAnimationSeed: command.animationSeed,
       pendingThrows: [
         ...state.pendingThrows,
         { id: throwEventId, result: outcome.result, distance: outcome.distance },
@@ -513,7 +512,8 @@ export function toPublicGameState(
           eventId: state.lastThrowEventId ?? (() => { throw new Error("Throw event id is missing"); })(),
           result: state.lastThrow.result,
           sticks: [...state.lastThrow.sticks] as ThrowOutcome["sticks"],
-          power: state.lastThrowPower,
+          animationSeed: state.lastThrowAnimationSeed
+            ?? (() => { throw new Error("Throw animation seed is missing"); })(),
         }
       : null,
     lastMove: state.lastMove

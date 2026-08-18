@@ -17,11 +17,7 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("CHOOSE_COLOR"), slot: z.number().int().min(0).max(3), ...versioned }).strict(),
   z.object({ type: z.literal("START_GAME"), ...versioned }).strict(),
   z.object({ type: z.literal("PLAY_AGAIN"), ...versioned }).strict(),
-  z.object({
-    type: z.literal("THROW_YUT"),
-    power: z.enum(["soft", "normal", "hard"]).optional(),
-    ...versioned,
-  }).strict(),
+  z.object({ type: z.literal("THROW_YUT"), ...versioned }).strict(),
   z.object({ type: z.literal("SELECT_PIECE"), throwId: z.string().min(1), pieceId: z.string().min(1), ...versioned }).strict(),
   z.object({ type: z.literal("SELECT_ROUTE"), routeId: z.string().min(1), ...versioned }).strict(),
   z.object({ type: z.literal("REACT"), emoji: z.enum(["\uD83D\uDC4F", "\uD83D\uDD25", "\uD83D\uDE2E", "\uD83C\uDF89"]) }).strict(),

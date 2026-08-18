@@ -68,88 +68,6 @@ export interface StickLayout {
   touchdown: number;
 }
 
-/**
- * 던지는 손버릇. 던질 때마다 하나가 걸린다.
- *
- * 자리만 흩어지고 동작이 늘 같으면 백 번을 던져도 한 번 본 것과 다르지 않다.
- * 높이 띄우는 손, 낮게 굴리는 손, 넓게 뿌리는 손이 저마다 달리 보이도록 나눈다.
- */
-export interface TossStyle {
-  id: "높이" | "구르기" | "흩뿌리기" | "잰걸음" | "엇갈리기"
-    | "쏟아붓기" | "세워던지기" | "앞구르기" | "팽이" | "통통";
-  /** 한 가락이 나는 시간과, 가락끼리 벌어지는 시차. */
-  tossMs: number;
-  staggerMs: number;
-  lift: number;
-  bounce: number;
-  /** 굴림 바퀴 수의 범위. */
-  minTurns: number;
-  turnSpread: number;
-  /** 나는 동안 수평으로 도는 바퀴. */
-  yawTurns: number;
-  /** 옆으로 미끄러져 들어오는 폭. 음수와 양수가 섞이면 서로 엇갈린다. */
-  drift: number;
-  /** 흔들림과 흩어짐. */
-  wobble: number;
-  spread: number;
-  /** 앞뒤로 밀려 들어오는 폭. */
-  driftZ: number;
-  /** 곧추섰다 눕는 정도. */
-  pitch: number;
-  /** 앉으면서 튀는 횟수. */
-  bounces: number;
-  /** 떨어지는 차례. */
-  order: "앞부터" | "뒤부터" | "바깥부터";
-}
-
-/**
- * lift와 drift는 기준 높이·기준 폭에 곱하는 배수다. 1 언저리를 벗어나면
- * 윷가락이 화면 밖으로 날아가 그림자만 남는다. 다양함은 높이보다 굴림·시차·흩어짐에서 낸다.
- */
-/**
- * 던지는 힘. 던지는 사람이 고르고, 서버가 되돌려 준 값으로 모두가 같은 높이를 본다.
- * 힘은 보기만 바꾼다. 무엇이 나올지에는 아무 영향이 없다.
- */
-export type ThrowPower = "soft" | "normal" | "hard";
-
-const POWER_LIFT: Readonly<Record<ThrowPower, number>> = { soft: 0.68, normal: 1, hard: 1.3 };
-const POWER_SPAN: Readonly<Record<ThrowPower, number>> = { soft: 0.9, normal: 1, hard: 1.12 };
-/** 공중에서 도는 바퀴. 살살 던진 윷이 빠르게 돌면 낮게 뜬 채 붕 떠 보인다. */
-const POWER_TURNS: Readonly<Record<ThrowPower, number>> = { soft: 0.5, normal: 1, hard: 1.15 };
-/**
- * 나는 시간 중 어디쯤에서 멍석에 닿는지. 1이면 끝까지 날다 앉는다.
- * 살살 던진 윷은 일찍 닿아 남은 시간 동안 바닥을 구르다 멎는다.
- */
-const POWER_TOUCHDOWN: Readonly<Record<ThrowPower, number>> = { soft: 0.5, normal: 1, hard: 1 };
-
-/** 그 힘이 높이를 몇 배로 만드는지. */
-export function liftScaleOf(power: ThrowPower): number {
-  return POWER_LIFT[power];
-}
-
-export const TOSS_STYLES: readonly TossStyle[] = Object.freeze([
-  // 높이 띄워 천천히 떨어뜨린다. 구르는 바퀴는 적어 한 장 한 장이 또렷하다.
-  { id: "높이", tossMs: 980, staggerMs: 70, lift: 1.2, bounce: 0.1, bounces: 1, minTurns: 2, turnSpread: 1, yawTurns: 0, drift: 0.35, driftZ: 0, pitch: 0, wobble: 0.18, spread: 0.22, order: "앞부터" },
-  // 낮게 던져 많이 굴린다. 옆에서 밀려 들어와 미끄러지듯 멎는다.
-  { id: "구르기", tossMs: 840, staggerMs: 45, lift: 0.55, bounce: 0.3, bounces: 1, minTurns: 4, turnSpread: 2, yawTurns: 0, drift: 1.1, driftZ: 0, pitch: 0, wobble: 0.1, spread: 0.16, order: "앞부터" },
-  // 넓게 뿌린다. 수평으로 한 바퀴 돌며 자리도 크게 벌어진다.
-  { id: "흩뿌리기", tossMs: 900, staggerMs: 55, lift: 0.95, bounce: 0.16, bounces: 1, minTurns: 3, turnSpread: 2, yawTurns: 1, drift: 0.8, driftZ: 0, pitch: 0, wobble: 0.32, spread: 0.34, order: "바깥부터" },
-  // 짧고 빠르게. 낮게 뜨고 두 번 톡톡 튄다.
-  { id: "잰걸음", tossMs: 620, staggerMs: 38, lift: 0.7, bounce: 0.34, bounces: 2, minTurns: 3, turnSpread: 1, yawTurns: 0, drift: 0.5, driftZ: 0, pitch: 0, wobble: 0.22, spread: 0.14, order: "뒤부터" },
-  // 서로 엇갈려 지나간다. 반대쪽에서 비스듬히 들어와 자리를 바꾸듯 앉는다.
-  { id: "엇갈리기", tossMs: 880, staggerMs: 30, lift: 1.0, bounce: 0.14, bounces: 1, minTurns: 3, turnSpread: 2, yawTurns: 1, drift: 0.95, driftZ: 0.6, pitch: 0, wobble: 0.26, spread: 0.2, order: "바깥부터" },
-  // 넷이 한꺼번에 떨어진다. 시차가 없어 한 번의 쿵으로 들린다.
-  { id: "쏟아붓기", tossMs: 760, staggerMs: 0, lift: 0.85, bounce: 0.22, bounces: 1, minTurns: 3, turnSpread: 1, yawTurns: 0, drift: 0.4, driftZ: 0, pitch: 0, wobble: 0.14, spread: 0.26, order: "앞부터" },
-  // 곧추세워 던진다. 서서 날다가 앉으면서 눕는다.
-  { id: "세워던지기", tossMs: 900, staggerMs: 50, lift: 0.8, bounce: 0.12, bounces: 1, minTurns: 2, turnSpread: 1, yawTurns: 0, drift: 0.35, driftZ: 0, pitch: 1, wobble: 0.1, spread: 0.2, order: "앞부터" },
-  // 앞쪽에서 굴러 들어온다. 좌우가 아니라 앞뒤로 밀려 두 번 튄다.
-  { id: "앞구르기", tossMs: 820, staggerMs: 42, lift: 0.7, bounce: 0.24, bounces: 2, minTurns: 4, turnSpread: 1, yawTurns: 0, drift: 0.2, driftZ: 1.2, pitch: 0, wobble: 0.12, spread: 0.18, order: "뒤부터" },
-  // 팽이처럼 수평으로 두 바퀴 돌며 내려앉는다.
-  { id: "팽이", tossMs: 940, staggerMs: 48, lift: 1.05, bounce: 0.14, bounces: 1, minTurns: 2, turnSpread: 2, yawTurns: 2, drift: 0.5, driftZ: 0.4, pitch: 0, wobble: 0.2, spread: 0.24, order: "바깥부터" },
-  // 낮게 던져 세 번 통통 튄다. 멍석을 두드리는 소리가 들릴 것 같은 손이다.
-  { id: "통통", tossMs: 700, staggerMs: 34, lift: 0.6, bounce: 0.3, bounces: 3, minTurns: 3, turnSpread: 1, yawTurns: 0, drift: 0.45, driftZ: 0.5, pitch: 0, wobble: 0.28, spread: 0.2, order: "앞부터" },
-]);
-
 function easeOutCubic(value: number): number {
   return 1 - (1 - value) ** 3;
 }
@@ -208,56 +126,46 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-/** 이 던지기에 걸린 손버릇. 같은 던지기는 어느 자리에서 봐도 같은 손버릇으로 굴러간다. */
-export function styleFor(throwKey: string): TossStyle {
-  // 자리를 흩는 난수와 다른 씨를 쓴다. 같은 난수를 나눠 쓰면 손버릇이 흩어짐에 딸려 간다.
-  const random = mulberry32(hash32(`${throwKey}:손버릇`));
-  return TOSS_STYLES[Math.floor(random() * TOSS_STYLES.length)] ?? TOSS_STYLES[0];
+function between(random: () => number, minimum: number, maximum: number): number {
+  return minimum + random() * (maximum - minimum);
 }
 
-/** 가락이 떨어지는 차례. 앞에서부터, 뒤에서부터, 또는 바깥 두 짝이 먼저. */
-function landingOrder(order: TossStyle["order"], index: number, count: number): number {
-  if (order === "뒤부터") return count - 1 - index;
-  if (order === "바깥부터") {
-    const middle = (count - 1) / 2;
-    // 가운데에서 먼 것부터 0, 1, 2… 차례를 받는다.
-    return Math.round(Math.abs(index - middle) * -1 + middle);
-  }
-  return index;
+function wholeBetween(random: () => number, minimum: number, maximum: number): number {
+  return Math.floor(between(random, minimum, maximum + 1));
 }
 
-/** 같은 던지기는 언제 다시 그려도 같은 자리에 흩어지도록 결과 id로 난수를 고정한다. */
+/**
+ * 서버가 보낸 시드로 매 가락의 초기 속도·회전·바운스를 직접 만든다.
+ * 몇 개의 동작을 고르는 대신 모든 축을 연속 범위에서 뽑아 매번 다른 궤적이 나온다.
+ */
 export function layoutFor(
-  throwKey: string,
+  animationSeed: string,
   count: number,
-  power: ThrowPower = "normal",
 ): StickLayout[] {
-  const random = mulberry32(hash32(throwKey));
-  const style = styleFor(throwKey);
+  const random = mulberry32(hash32(animationSeed));
   const offset = ((count - 1) * ROW_GAP) / 2;
+  const sharedFlightMs = between(random, 700, 1_020);
+  const sharedLift = between(random, 0.58, 1.18);
+
   return Array.from({ length: count }, (unusedValue, index) => {
-    // 엇갈리는 손버릇은 짝수·홀수를 반대쪽에서 밀어 넣어 서로 지나가게 한다.
-    const side = style.id === "엇갈리기" ? (index % 2 === 0 ? 1 : -1) : random() - 0.5;
     return {
-      x: (random() - 0.5) * style.spread * 2,
-      z: index * ROW_GAP - offset + (random() - 0.5) * Math.min(style.spread, 0.3),
-      yaw: (random() - 0.5) * (0.17 + style.spread),
-      turns: Math.max(
-        1,
-        Math.round((style.minTurns + Math.floor(random() * (style.turnSpread + 1))) * POWER_TURNS[power]),
-      ),
-      drift: side * style.drift * (0.6 + random() * 0.8),
-      // 힘은 높이와 나는 시간만 건드린다. 흩어지는 자리와 구르는 바퀴는 그 던지기의 것이다.
-      delayMs: Math.round(landingOrder(style.order, index, count) * style.staggerMs * POWER_SPAN[power]),
-      tossMs: Math.round(style.tossMs * POWER_SPAN[power]),
-      lift: style.lift * (0.88 + random() * 0.24) * POWER_LIFT[power],
-      bounce: style.bounce,
-      bounces: style.bounces,
-      touchdown: POWER_TOUCHDOWN[power],
-      yawTurns: style.yawTurns,
-      wobble: style.wobble,
-      driftZ: side * style.driftZ * (0.6 + random() * 0.8),
-      pitch: style.pitch,
+      x: between(random, -0.32, 0.32),
+      z: index * ROW_GAP - offset + between(random, -0.12, 0.12),
+      yaw: between(random, -0.28, 0.28),
+      // 결과 면에 정확히 닿으려면 앞선 회전 수만 정수여야 한다.
+      turns: wholeBetween(random, 2, 6),
+      drift: between(random, -1.2, 1.2),
+      delayMs: Math.round(between(random, 0, 120)),
+      tossMs: Math.round(sharedFlightMs * between(random, 0.88, 1.12)),
+      lift: sharedLift * between(random, 0.84, 1.16),
+      bounce: between(random, 0.08, 0.34),
+      bounces: wholeBetween(random, 1, 3),
+      // 일찍 닿은 뒤 남은 시간은 멍석 위에서 굴러 감속한다.
+      touchdown: between(random, 0.55, 0.94),
+      yawTurns: wholeBetween(random, -2, 2),
+      wobble: between(random, 0.08, 0.36),
+      driftZ: between(random, -1, 1),
+      pitch: between(random, 0, 1),
     };
   });
 }
@@ -267,9 +175,9 @@ export function settleMsOf(layout: readonly StickLayout[]): number {
   return layout.reduce((latest, spot) => Math.max(latest, spot.delayMs + spot.tossMs), 0);
 }
 
-/** 던지기 id와 힘만 알면 연출 길이를 얻는다. 결과 글자를 언제 내보일지 정하는 데 쓴다. */
-export function settleMsFor(throwKey: string, power: ThrowPower = "normal"): number {
-  return settleMsOf(layoutFor(throwKey, STICK_COUNT, power));
+/** 서버 연출 시드만 알면 결과 글자를 언제 내보일지 계산할 수 있다. */
+export function settleMsFor(animationSeed: string): number {
+  return settleMsOf(layoutFor(animationSeed, STICK_COUNT));
 }
 
 export interface StickGeometry {

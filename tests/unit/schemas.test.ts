@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nicknameSchema, normalizeNickname, roomCodeSchema } from "../../shared/schemas";
+import { nicknameSchema, normalizeNickname, parseClientCommand, roomCodeSchema } from "../../shared/schemas";
 
 describe("guest inputs", () => {
   it("normalizes internal whitespace", () => {
@@ -30,5 +30,14 @@ describe("guest inputs", () => {
 
   it("rejects ambiguous room-code characters", () => {
     expect(roomCodeSchema.safeParse("O0IL12").success).toBe(false);
+  });
+
+  it("rejects the removed throw-power option", () => {
+    expect(parseClientCommand({
+      type: "THROW_YUT",
+      power: "hard",
+      roomVersion: 1,
+      requestId: "00000000-0000-4000-8000-000000000001",
+    }).success).toBe(false);
   });
 });
