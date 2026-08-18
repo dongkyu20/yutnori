@@ -21,6 +21,7 @@ import {
 
 const EPS = 1e-6;
 const PHYSICS_SEEDS = Array.from({ length: 24 }, (unusedValue, index) => `physics-seed-${index}`);
+const AUDIT_SEEDS = Array.from({ length: 80 }, (unusedValue, index) => `audit-${index}`);
 
 /** 조각 하나의 정점을 [x, y, z] 배열로 펼친다. */
 function vertices(geometry: THREE.BufferGeometry): Array<[number, number, number]> {
@@ -39,6 +40,32 @@ function allVertices(): Array<[number, number, number]> {
 function worldPoints(group: THREE.Group, points: Array<[number, number, number]>): THREE.Vector3[] {
   group.updateMatrixWorld(true);
   return points.map(([x, y, z]) => new THREE.Vector3(x, y, z).applyMatrix4(group.matrixWorld));
+}
+
+function minimumWorldY(group: THREE.Group, points: Array<[number, number, number]>): number {
+  group.updateMatrixWorld(true);
+  const point = new THREE.Vector3();
+  return points.reduce((minimum, [x, y, z]) => {
+    point.set(x, y, z).applyMatrix4(group.matrixWorld);
+    return Math.min(minimum, point.y);
+  }, Number.POSITIVE_INFINITY);
+}
+
+function maximumProjectedExtent(
+  group: THREE.Group,
+  points: Array<[number, number, number]>,
+  camera: THREE.PerspectiveCamera,
+): { x: number; y: number; z: number } {
+  group.updateMatrixWorld(true);
+  const point = new THREE.Vector3();
+  return points.reduce((maximum, [x, y, z]) => {
+    point.set(x, y, z).applyMatrix4(group.matrixWorld).project(camera);
+    return {
+      x: Math.max(maximum.x, Math.abs(point.x)),
+      y: Math.max(maximum.y, Math.abs(point.y)),
+      z: Math.max(maximum.z, point.z),
+    };
+  }, { x: 0, y: 0, z: Number.NEGATIVE_INFINITY });
 }
 
 function makeViews(count: number): THREE.Group[] {
@@ -219,14 +246,15 @@ describe("무작위 궤적 안전성", () => {
   );
 
   it("무작위 궤적이 멍석 아래로 파고들지 않는다", () => {
+    const points = allVertices();
     const flags = [true, false, true, false];
-    PHYSICS_SEEDS.forEach((seed) => {
+    AUDIT_SEEDS.forEach((seed) => {
       const layout = layoutFor(seed, 4);
       const views = makeViews(4);
-      for (let elapsed = 0; elapsed <= settleMsOf(layout); elapsed += 10) {
+      for (let elapsed = 0; elapsed <= settleMsOf(layout); elapsed += 16) {
         applyToss(views, flags, layout, elapsed);
-        views.forEach((group, index) => {
-          expect(group.position.y).toBeGreaterThanOrEqual(restHeight(flags[index]) - EPS);
+        views.forEach((group) => {
+          expect(minimumWorldY(group, points)).toBeGreaterThanOrEqual(-EPS);
         });
       }
     });
@@ -331,5 +359,31 @@ describe("구도", () => {
     expect(widest).toBeGreaterThan(0.9);
     // 멍석을 위에서 내려다본다.
     expect(camera.position.y).toBeGreaterThan(CONTENT.y);
+  });
+
+  it.each([
+    { label: "넓은 데스크톱 패널", aspect: 2.6 },
+    { label: "좁은 모바일 패널", aspect: 1.1 },
+    { label: "정사각 패널", aspect: 1 },
+  ])("keeps every generated stick vertex visible on $label", ({ aspect }) => {
+    const camera = new THREE.PerspectiveCamera(FOV, aspect, 0.1, 100);
+    frameCamera(THREE, camera, aspect);
+    camera.updateMatrixWorld(true);
+    const points = allVertices();
+    const flags = [true, false, true, false];
+
+    AUDIT_SEEDS.forEach((seed) => {
+      const layout = layoutFor(seed, 4);
+      const views = makeViews(4);
+      for (let elapsed = 0; elapsed <= settleMsOf(layout); elapsed += 16) {
+        applyToss(views, flags, layout, elapsed);
+        views.forEach((group) => {
+          const extent = maximumProjectedExtent(group, points, camera);
+          expect(extent.x).toBeLessThanOrEqual(1 + EPS);
+          expect(extent.y).toBeLessThanOrEqual(1 + EPS);
+          expect(extent.z).toBeLessThanOrEqual(1 + EPS);
+        });
+      }
+    });
   });
 });

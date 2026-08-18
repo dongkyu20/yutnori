@@ -24,6 +24,13 @@ export const MARKED_INDEX = 0;
 export const STICK_COUNT = 4;
 /** 손버릇이 정한 높이에 곱해지는 기준 높이. */
 const LIFT = 2.05;
+/** 회전한 가락의 어느 꼭짓점도 중심에서 이 거리보다 멀어질 수 없다. */
+const STICK_REACH = Math.hypot(LENGTH / 2, RADIUS, RADIUS);
+const MAX_LANDING_X = 0.32;
+const MAX_LANDING_Z_JITTER = 0.12;
+const MAX_DRIFT_X = 1.2;
+const MAX_DRIFT_Z = 1;
+const MAX_LIFT = 1.18 * 1.16 * LIFT;
 
 /* 멍석을 위에서 내려다보는 시선. */
 const VIEW_ELEVATION = 0.74;
@@ -36,9 +43,9 @@ export const FOV = 34;
  * 멍석 아래는 볼 일이 없으므로 위로만 담는다.
  */
 export const CONTENT = {
-  x: LENGTH / 2 + 0.42,
-  y: RADIUS + CUT_DEPTH + 1.35,
-  z: (3 * ROW_GAP) / 2 + RADIUS + 0.22,
+  x: MAX_LANDING_X + MAX_DRIFT_X + STICK_REACH + 0.08,
+  y: RADIUS + MAX_LIFT + LENGTH / 2 + STICK_REACH + 0.08,
+  z: (3 * ROW_GAP) / 2 + MAX_LANDING_Z_JITTER + MAX_DRIFT_Z + STICK_REACH + 0.08,
 };
 
 export interface StickLayout {
@@ -149,12 +156,12 @@ export function layoutFor(
 
   return Array.from({ length: count }, (unusedValue, index) => {
     return {
-      x: between(random, -0.32, 0.32),
-      z: index * ROW_GAP - offset + between(random, -0.12, 0.12),
+      x: between(random, -MAX_LANDING_X, MAX_LANDING_X),
+      z: index * ROW_GAP - offset + between(random, -MAX_LANDING_Z_JITTER, MAX_LANDING_Z_JITTER),
       yaw: between(random, -0.28, 0.28),
       // 결과 면에 정확히 닿으려면 앞선 회전 수만 정수여야 한다.
       turns: wholeBetween(random, 2, 6),
-      drift: between(random, -1.2, 1.2),
+      drift: between(random, -MAX_DRIFT_X, MAX_DRIFT_X),
       delayMs: Math.round(between(random, 0, 120)),
       tossMs: Math.round(sharedFlightMs * between(random, 0.88, 1.12)),
       lift: sharedLift * between(random, 0.84, 1.16),
@@ -164,7 +171,7 @@ export function layoutFor(
       touchdown: between(random, 0.55, 0.94),
       yawTurns: wholeBetween(random, -2, 2),
       wobble: between(random, 0.08, 0.36),
-      driftZ: between(random, -1, 1),
+      driftZ: between(random, -MAX_DRIFT_Z, MAX_DRIFT_Z),
       pitch: between(random, 0, 1),
     };
   });
@@ -307,11 +314,28 @@ export function applyToss(
       spot.yaw + left * (spot.drift * 0.7 + spot.yawTurns * Math.PI * 2),
       tilt + left * Math.sin(progress * Math.PI * 3) * spot.wobble,
     );
+    const { x: qx, y: qy, z: qz, w: qw } = group.quaternion;
+    // 회전 행렬의 세계 Y행으로 가락의 보수적인 경계 상자를 투영한다.
+    // 중심점이 아니라 실제 형상 전체가 멍석 위에 오도록 필요한 높이를 구한다.
+    const axisX = 2 * (qx * qy + qw * qz);
+    const axisY = 1 - 2 * (qx * qx + qz * qz);
+    const axisZ = 2 * (qy * qz - qw * qx);
+    const lowestLocalY = -Math.abs(axisX) * (LENGTH / 2)
+      + axisY * (axisY >= 0 ? -CUT_DEPTH : RADIUS)
+      - Math.abs(axisZ) * RADIUS;
+    const clearance = -lowestLocalY;
+    // 시작과 끝은 applyRest와 숫자까지 같은 값으로 닫고, 움직이는 동안만
+    // 회전한 실제 형상의 여유 높이를 적용한다.
+    const centerHeight = progress <= 0 || progress >= 1
+      ? restHeight(flat)
+      : Math.max(
+        clearance,
+        rollHeight(roll),
+        restHeight(flat) + airborne + Math.sin(tilt) * (LENGTH / 2),
+      );
     group.position.set(
       spot.x + left * spot.drift,
-      // 나는 중에는 뜬 높이를, 닿은 뒤에는 구르는 자세만큼을 따른다.
-      // 세워진 만큼도 들어 올린다. 그러지 않으면 아래쪽 끝이 멍석을 파고든다.
-      Math.max(rollHeight(roll), restHeight(flat) + airborne + Math.sin(tilt) * (LENGTH / 2)),
+      centerHeight,
       spot.z + left * spot.driftZ,
     );
     if (progress < 1) running = true;

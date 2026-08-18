@@ -221,7 +221,8 @@ describe("TurnPanel", () => {
       <TurnPanel
         game={{
           ...initial,
-          lastThrow: { eventId: "event-3", result: "DO", sticks: [true, false, false, false], animationSeed: "seed-3" },
+          // 아주 드문 시드 충돌이 나도 새 서버 이벤트면 연출을 다시 시작해야 한다.
+          lastThrow: { eventId: "event-3", result: "DO", sticks: [true, false, false, false], animationSeed: "seed-1" },
         }}
         currentPlayerNickname="민수"
         isCurrentPlayer
