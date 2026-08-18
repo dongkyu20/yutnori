@@ -24,6 +24,29 @@ import {
 
 const EPS = 1e-6;
 
+/** 그 손버릇대로 던졌다면 가락이 가졌을 값. 손버릇 하나하나를 따로 보기 위한 것이다. */
+function styleLayoutFor(style: (typeof TOSS_STYLES)[number], index: number, count: number) {
+  const middle = (count - 1) / 2;
+  const step = style.order === "뒤부터"
+    ? count - 1 - index
+    : style.order === "바깥부터"
+      ? Math.round(middle - Math.abs(index - middle))
+      : index;
+  return {
+    turns: style.minTurns,
+    lift: style.lift,
+    bounce: style.bounce,
+    bounces: style.bounces,
+    yawTurns: style.yawTurns,
+    wobble: style.wobble,
+    pitch: style.pitch,
+    drift: style.drift,
+    driftZ: style.driftZ,
+    delayMs: step * style.staggerMs,
+    tossMs: style.tossMs,
+  };
+}
+
 /** 조각 하나의 정점을 [x, y, z] 배열로 펼친다. */
 function vertices(geometry: THREE.BufferGeometry): Array<[number, number, number]> {
   const position = geometry.getAttribute("position");
@@ -189,6 +212,66 @@ describe("던지는 손버릇", () => {
       expect(spot.delayMs + spot.tossMs).toBeLessThanOrEqual(settle);
     });
     expect(settle).toBe(Math.max(...layout.map((spot) => spot.delayMs + spot.tossMs)));
+  });
+});
+
+describe("손버릇 하나하나", () => {
+  // 어느 손버릇으로 던지든 지켜야 하는 것들. 새 축을 더할 때마다 여기서 걸린다.
+  it.each(TOSS_STYLES.map((style) => [style.id, style] as const))(
+    "%s은 결과 면으로 정확히 내려앉는다",
+    (unusedId, style) => {
+      const flags = [true, false, true, false];
+      const key = `throw-${style.id}`;
+      const layout = layoutFor(key, 4).map((spot, index) => ({
+        ...spot,
+        ...styleLayoutFor(style, index, 4),
+      }));
+      const views = makeViews(4);
+      const rested = makeViews(4);
+
+      applyToss(views, flags, layout, settleMsOf(layout));
+      applyRest(rested, flags, layout);
+      views.forEach((group, index) => {
+        expect(group.position.toArray()).toEqual(rested[index].position.toArray());
+        expect(group.rotation.toArray()).toEqual(rested[index].rotation.toArray());
+      });
+    },
+  );
+
+  it("멍석 아래로는 어느 손버릇도 파고들지 않는다", () => {
+    const flags = [true, false, true, false];
+    TOSS_STYLES.forEach((style) => {
+      const layout = layoutFor(`throw-${style.id}`, 4).map((spot, index) => ({
+        ...spot,
+        ...styleLayoutFor(style, index, 4),
+      }));
+      const views = makeViews(4);
+      for (let elapsed = 0; elapsed <= settleMsOf(layout); elapsed += 10) {
+        applyToss(views, flags, layout, elapsed);
+        views.forEach((group, index) => {
+          expect(group.position.y).toBeGreaterThanOrEqual(restHeight(flags[index]) - EPS);
+        });
+      }
+    });
+  });
+
+  it("손버릇마다 움직이는 결이 다르다", () => {
+    // 값 하나만 다른 손버릇을 여럿 두면 이름만 늘어날 뿐 눈에는 같은 것이 반복된다.
+    expect(TOSS_STYLES.length).toBeGreaterThanOrEqual(10);
+    const shapes = new Set(
+      TOSS_STYLES.map((style) => [
+        style.lift > 1 ? "높음" : style.lift > 0.7 ? "보통" : "낮음",
+        style.minTurns >= 4 ? "많이구름" : "적게구름",
+        style.yawTurns,
+        style.pitch > 0 ? "세움" : "눕힘",
+        style.driftZ > 0 ? "앞뒤" : "좌우",
+        style.bounces,
+        style.order,
+        style.staggerMs === 0 ? "한꺼번에" : "차례로",
+      ].join("/")),
+    );
+    // 열 가지가 저마다 다른 조합이어야 한다.
+    expect(shapes.size).toBe(TOSS_STYLES.length);
   });
 });
 

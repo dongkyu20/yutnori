@@ -58,6 +58,12 @@ export interface StickLayout {
   yawTurns: number;
   /** 날면서 좌우로 흔들리는 폭. */
   wobble: number;
+  /** 앞뒤로 밀려 들어오는 폭. 좌우로만 들어오면 어느 손버릇이든 결이 비슷해진다. */
+  driftZ: number;
+  /** 세워졌다 눕는 정도. 1이면 날 때 곧추섰다가 앉으면서 눕는다. */
+  pitch: number;
+  /** 앉으면서 튀는 횟수. */
+  bounces: number;
 }
 
 /**
@@ -67,7 +73,8 @@ export interface StickLayout {
  * 높이 띄우는 손, 낮게 굴리는 손, 넓게 뿌리는 손이 저마다 달리 보이도록 나눈다.
  */
 export interface TossStyle {
-  id: "높이" | "구르기" | "흩뿌리기" | "잰걸음" | "엇갈리기";
+  id: "높이" | "구르기" | "흩뿌리기" | "잰걸음" | "엇갈리기"
+    | "쏟아붓기" | "세워던지기" | "앞구르기" | "팽이" | "통통";
   /** 한 가락이 나는 시간과, 가락끼리 벌어지는 시차. */
   tossMs: number;
   staggerMs: number;
@@ -83,6 +90,12 @@ export interface TossStyle {
   /** 흔들림과 흩어짐. */
   wobble: number;
   spread: number;
+  /** 앞뒤로 밀려 들어오는 폭. */
+  driftZ: number;
+  /** 곧추섰다 눕는 정도. */
+  pitch: number;
+  /** 앉으면서 튀는 횟수. */
+  bounces: number;
   /** 떨어지는 차례. */
   order: "앞부터" | "뒤부터" | "바깥부터";
 }
@@ -107,15 +120,25 @@ export function liftScaleOf(power: ThrowPower): number {
 
 export const TOSS_STYLES: readonly TossStyle[] = Object.freeze([
   // 높이 띄워 천천히 떨어뜨린다. 구르는 바퀴는 적어 한 장 한 장이 또렷하다.
-  { id: "높이", tossMs: 980, staggerMs: 70, lift: 1.2, bounce: 0.1, minTurns: 2, turnSpread: 1, yawTurns: 0, drift: 0.35, wobble: 0.18, spread: 0.22, order: "앞부터" },
+  { id: "높이", tossMs: 980, staggerMs: 70, lift: 1.2, bounce: 0.1, bounces: 1, minTurns: 2, turnSpread: 1, yawTurns: 0, drift: 0.35, driftZ: 0, pitch: 0, wobble: 0.18, spread: 0.22, order: "앞부터" },
   // 낮게 던져 많이 굴린다. 옆에서 밀려 들어와 미끄러지듯 멎는다.
-  { id: "구르기", tossMs: 840, staggerMs: 45, lift: 0.55, bounce: 0.3, minTurns: 4, turnSpread: 2, yawTurns: 0, drift: 1.1, wobble: 0.1, spread: 0.16, order: "앞부터" },
+  { id: "구르기", tossMs: 840, staggerMs: 45, lift: 0.55, bounce: 0.3, bounces: 1, minTurns: 4, turnSpread: 2, yawTurns: 0, drift: 1.1, driftZ: 0, pitch: 0, wobble: 0.1, spread: 0.16, order: "앞부터" },
   // 넓게 뿌린다. 수평으로 한 바퀴 돌며 자리도 크게 벌어진다.
-  { id: "흩뿌리기", tossMs: 900, staggerMs: 55, lift: 0.95, bounce: 0.16, minTurns: 3, turnSpread: 2, yawTurns: 1, drift: 0.8, wobble: 0.32, spread: 0.34, order: "바깥부터" },
+  { id: "흩뿌리기", tossMs: 900, staggerMs: 55, lift: 0.95, bounce: 0.16, bounces: 1, minTurns: 3, turnSpread: 2, yawTurns: 1, drift: 0.8, driftZ: 0, pitch: 0, wobble: 0.32, spread: 0.34, order: "바깥부터" },
   // 짧고 빠르게. 낮게 뜨고 두 번 톡톡 튄다.
-  { id: "잰걸음", tossMs: 620, staggerMs: 38, lift: 0.7, bounce: 0.34, minTurns: 3, turnSpread: 1, yawTurns: 0, drift: 0.5, wobble: 0.22, spread: 0.14, order: "뒤부터" },
-  // 서로 엇갈려 지나간다. 반대쪽에서 들어와 자리를 바꾸듯 앉는다.
-  { id: "엇갈리기", tossMs: 880, staggerMs: 30, lift: 1.0, bounce: 0.14, minTurns: 3, turnSpread: 2, yawTurns: 1, drift: 0.95, wobble: 0.26, spread: 0.2, order: "바깥부터" },
+  { id: "잰걸음", tossMs: 620, staggerMs: 38, lift: 0.7, bounce: 0.34, bounces: 2, minTurns: 3, turnSpread: 1, yawTurns: 0, drift: 0.5, driftZ: 0, pitch: 0, wobble: 0.22, spread: 0.14, order: "뒤부터" },
+  // 서로 엇갈려 지나간다. 반대쪽에서 비스듬히 들어와 자리를 바꾸듯 앉는다.
+  { id: "엇갈리기", tossMs: 880, staggerMs: 30, lift: 1.0, bounce: 0.14, bounces: 1, minTurns: 3, turnSpread: 2, yawTurns: 1, drift: 0.95, driftZ: 0.6, pitch: 0, wobble: 0.26, spread: 0.2, order: "바깥부터" },
+  // 넷이 한꺼번에 떨어진다. 시차가 없어 한 번의 쿵으로 들린다.
+  { id: "쏟아붓기", tossMs: 760, staggerMs: 0, lift: 0.85, bounce: 0.22, bounces: 1, minTurns: 3, turnSpread: 1, yawTurns: 0, drift: 0.4, driftZ: 0, pitch: 0, wobble: 0.14, spread: 0.26, order: "앞부터" },
+  // 곧추세워 던진다. 서서 날다가 앉으면서 눕는다.
+  { id: "세워던지기", tossMs: 900, staggerMs: 50, lift: 0.8, bounce: 0.12, bounces: 1, minTurns: 2, turnSpread: 1, yawTurns: 0, drift: 0.35, driftZ: 0, pitch: 1, wobble: 0.1, spread: 0.2, order: "앞부터" },
+  // 앞쪽에서 굴러 들어온다. 좌우가 아니라 앞뒤로 밀려 두 번 튄다.
+  { id: "앞구르기", tossMs: 820, staggerMs: 42, lift: 0.7, bounce: 0.24, bounces: 2, minTurns: 4, turnSpread: 1, yawTurns: 0, drift: 0.2, driftZ: 1.2, pitch: 0, wobble: 0.12, spread: 0.18, order: "뒤부터" },
+  // 팽이처럼 수평으로 두 바퀴 돌며 내려앉는다.
+  { id: "팽이", tossMs: 940, staggerMs: 48, lift: 1.05, bounce: 0.14, bounces: 1, minTurns: 2, turnSpread: 2, yawTurns: 2, drift: 0.5, driftZ: 0.4, pitch: 0, wobble: 0.2, spread: 0.24, order: "바깥부터" },
+  // 낮게 던져 세 번 통통 튄다. 멍석을 두드리는 소리가 들릴 것 같은 손이다.
+  { id: "통통", tossMs: 700, staggerMs: 34, lift: 0.6, bounce: 0.3, bounces: 3, minTurns: 3, turnSpread: 1, yawTurns: 0, drift: 0.45, driftZ: 0.5, pitch: 0, wobble: 0.28, spread: 0.2, order: "앞부터" },
 ]);
 
 function easeOutCubic(value: number): number {
@@ -137,11 +160,14 @@ export function restRoll(flat: boolean): number {
 }
 
 /** 크게 한 번 뜬 뒤 짧게 한 번 튀고 멍석에 앉는다. 끝나면 정확히 0으로 닫아 눕힌 높이와 어긋나지 않는다. */
-export function tossLift(progress: number, bounce = 0.16): number {
+export function tossLift(progress: number, bounce = 0.16, bounces = 1): number {
   const step = clamp01(progress);
   if (step >= 1) return 0;
   if (step < 0.68) return Math.sin((step / 0.68) * Math.PI);
-  return Math.sin(((step - 0.68) / 0.32) * Math.PI) * bounce;
+  // 남은 구간을 튀는 횟수만큼 나누고, 뒤로 갈수록 낮게 튀다 0으로 닫는다.
+  const tail = ((step - 0.68) / 0.32) * bounces;
+  const which = Math.floor(tail);
+  return Math.sin((tail - which) * Math.PI) * bounce * (1 - which / bounces);
 }
 
 function hash32(text: string): number {
@@ -204,8 +230,11 @@ export function layoutFor(
       tossMs: Math.round(style.tossMs * POWER_SPAN[power]),
       lift: style.lift * (0.88 + random() * 0.24) * POWER_LIFT[power],
       bounce: style.bounce,
+      bounces: style.bounces,
       yawTurns: style.yawTurns,
       wobble: style.wobble,
+      driftZ: side * style.driftZ * (0.6 + random() * 0.8),
+      pitch: style.pitch,
     };
   });
 }
@@ -334,16 +363,21 @@ export function applyToss(
     const progress = clamp01((elapsed - spot.delayMs) / spot.tossMs);
     const eased = easeOutCubic(progress);
     const left = 1 - eased;
+    // 곧추선 각도. 앉을 때 0이 되어 결과 면이 위를 보게 눕는다.
+    const tilt = left * spot.pitch * (Math.PI / 2);
     group.rotation.set(
       restRoll(flat) - spot.turns * Math.PI * 2 * left,
       // 수평 회전도 정수 바퀴라야 흩어진 각도에 정확히 앉는다.
       spot.yaw + left * (spot.drift * 0.7 + spot.yawTurns * Math.PI * 2),
-      left * Math.sin(progress * Math.PI * 3) * spot.wobble,
+      tilt + left * Math.sin(progress * Math.PI * 3) * spot.wobble,
     );
     group.position.set(
       spot.x + left * spot.drift,
-      restHeight(flat) + spot.lift * LIFT * tossLift(progress, spot.bounce),
-      spot.z,
+      // 세워진 만큼 들어 올린다. 그러지 않으면 아래쪽 끝이 멍석을 파고든다.
+      restHeight(flat)
+        + spot.lift * LIFT * tossLift(progress, spot.bounce, spot.bounces)
+        + Math.sin(tilt) * (LENGTH / 2),
+      spot.z + left * spot.driftZ,
     );
     if (progress < 1) running = true;
   });
