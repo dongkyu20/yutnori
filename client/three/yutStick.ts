@@ -64,6 +64,8 @@ export interface StickLayout {
   pitch: number;
   /** 앉으면서 튀는 횟수. */
   bounces: number;
+  /** 나는 시간 중 멍석에 닿는 지점. 이 뒤로는 굴러가며 멎는다. */
+  touchdown: number;
 }
 
 /**
@@ -112,6 +114,13 @@ export type ThrowPower = "soft" | "normal" | "hard";
 
 const POWER_LIFT: Readonly<Record<ThrowPower, number>> = { soft: 0.68, normal: 1, hard: 1.3 };
 const POWER_SPAN: Readonly<Record<ThrowPower, number>> = { soft: 0.9, normal: 1, hard: 1.12 };
+/** 공중에서 도는 바퀴. 살살 던진 윷이 빠르게 돌면 낮게 뜬 채 붕 떠 보인다. */
+const POWER_TURNS: Readonly<Record<ThrowPower, number>> = { soft: 0.5, normal: 1, hard: 1.15 };
+/**
+ * 나는 시간 중 어디쯤에서 멍석에 닿는지. 1이면 끝까지 날다 앉는다.
+ * 살살 던진 윷은 일찍 닿아 남은 시간 동안 바닥을 구르다 멎는다.
+ */
+const POWER_TOUCHDOWN: Readonly<Record<ThrowPower, number>> = { soft: 0.5, normal: 1, hard: 1 };
 
 /** 그 힘이 높이를 몇 배로 만드는지. */
 export function liftScaleOf(power: ThrowPower): number {
@@ -157,6 +166,16 @@ export function restHeight(flat: boolean): number {
 /** 굴림은 X축 회전이다. 0이면 등이 위, π면 배가 위다. */
 export function restRoll(flat: boolean): number {
   return flat ? Math.PI : 0;
+}
+
+/**
+ * 굴러가는 동안 축이 멍석에서 떠 있는 높이.
+ * 배가 아래면 얕게, 옆이나 등이 아래면 반지름만큼 뜬다.
+ * 이걸 무시하고 눕힌 높이로 붙들면 구르는 사이 멍석을 파고든다.
+ */
+export function rollHeight(roll: number): number {
+  const bellyDown = Math.max(0, Math.cos(roll));
+  return RADIUS - (RADIUS - CUT_DEPTH) * bellyDown ** 3;
 }
 
 /** 크게 한 번 뜬 뒤 짧게 한 번 튀고 멍석에 앉는다. 끝나면 정확히 0으로 닫아 눕힌 높이와 어긋나지 않는다. */
@@ -223,7 +242,10 @@ export function layoutFor(
       x: (random() - 0.5) * style.spread * 2,
       z: index * ROW_GAP - offset + (random() - 0.5) * Math.min(style.spread, 0.3),
       yaw: (random() - 0.5) * (0.17 + style.spread),
-      turns: style.minTurns + Math.floor(random() * (style.turnSpread + 1)),
+      turns: Math.max(
+        1,
+        Math.round((style.minTurns + Math.floor(random() * (style.turnSpread + 1))) * POWER_TURNS[power]),
+      ),
       drift: side * style.drift * (0.6 + random() * 0.8),
       // 힘은 높이와 나는 시간만 건드린다. 흩어지는 자리와 구르는 바퀴는 그 던지기의 것이다.
       delayMs: Math.round(landingOrder(style.order, index, count) * style.staggerMs * POWER_SPAN[power]),
@@ -231,6 +253,7 @@ export function layoutFor(
       lift: style.lift * (0.88 + random() * 0.24) * POWER_LIFT[power],
       bounce: style.bounce,
       bounces: style.bounces,
+      touchdown: POWER_TOUCHDOWN[power],
       yawTurns: style.yawTurns,
       wobble: style.wobble,
       driftZ: side * style.driftZ * (0.6 + random() * 0.8),
@@ -363,20 +386,24 @@ export function applyToss(
     const progress = clamp01((elapsed - spot.delayMs) / spot.tossMs);
     const eased = easeOutCubic(progress);
     const left = 1 - eased;
-    // 곧추선 각도. 앉을 때 0이 되어 결과 면이 위를 보게 눕는다.
-    const tilt = left * spot.pitch * (Math.PI / 2);
+    // 곧추선 각도. 눕힌 자세에서 시작해 날면서 섰다가 앉으면서 다시 눕는다.
+    // 처음부터 세워 두면 굴러가기 전에 선 윷이 한 번 번쩍인다.
+    // 다 앉은 뒤에는 딱 0이어야 눕힌 자세와 어긋나지 않는다.
+    const tilt = progress >= 1 ? 0 : Math.sin(progress * Math.PI) * spot.pitch * (Math.PI / 2);
+    const roll = restRoll(flat) - spot.turns * Math.PI * 2 * left;
+    // 닿는 시점을 앞당기면 남은 시간은 멍석 위를 구르며 멎는 데 쓰인다.
+    const airborne = spot.lift * LIFT * tossLift(progress / spot.touchdown, spot.bounce, spot.bounces);
     group.rotation.set(
-      restRoll(flat) - spot.turns * Math.PI * 2 * left,
+      roll,
       // 수평 회전도 정수 바퀴라야 흩어진 각도에 정확히 앉는다.
       spot.yaw + left * (spot.drift * 0.7 + spot.yawTurns * Math.PI * 2),
       tilt + left * Math.sin(progress * Math.PI * 3) * spot.wobble,
     );
     group.position.set(
       spot.x + left * spot.drift,
-      // 세워진 만큼 들어 올린다. 그러지 않으면 아래쪽 끝이 멍석을 파고든다.
-      restHeight(flat)
-        + spot.lift * LIFT * tossLift(progress, spot.bounce, spot.bounces)
-        + Math.sin(tilt) * (LENGTH / 2),
+      // 나는 중에는 뜬 높이를, 닿은 뒤에는 구르는 자세만큼을 따른다.
+      // 세워진 만큼도 들어 올린다. 그러지 않으면 아래쪽 끝이 멍석을 파고든다.
+      Math.max(rollHeight(roll), restHeight(flat) + airborne + Math.sin(tilt) * (LENGTH / 2)),
       spot.z + left * spot.driftZ,
     );
     if (progress < 1) running = true;

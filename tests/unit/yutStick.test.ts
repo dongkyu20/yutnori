@@ -7,6 +7,7 @@ import {
   frameCamera,
   layoutFor,
   restHeight,
+  rollHeight,
   liftScaleOf,
   settleMsFor,
   settleMsOf,
@@ -238,6 +239,27 @@ describe("손버릇 하나하나", () => {
     },
   );
 
+  it.each(TOSS_STYLES.map((style) => [style.id, style] as const))(
+    "%s은 눕힌 자세에서 던지기 시작한다",
+    (unusedId, style) => {
+      // 던지기 직전 화면에는 눕혀 둔 윷이 있다. 첫 칸이 그와 다르면
+      // 굴러가기 전에 다른 자세가 한 번 번쩍인다. 세워 던지는 손버릇에서 그랬다.
+      const flags = [true, false, true, false];
+      const key = `start-${style.id}`;
+      const layout = layoutFor(key, 4).map((spot, index) => ({
+        ...spot,
+        ...styleLayoutFor(style, index, 4),
+      }));
+      const views = makeViews(4);
+
+      applyToss(views, flags, layout, 0);
+      views.forEach((group, index) => {
+        expect(group.rotation.z).toBeCloseTo(0, 6);
+        expect(group.position.y).toBeCloseTo(restHeight(flags[index]), 6);
+      });
+    },
+  );
+
   it("멍석 아래로는 어느 손버릇도 파고들지 않는다", () => {
     const flags = [true, false, true, false];
     TOSS_STYLES.forEach((style) => {
@@ -286,12 +308,58 @@ describe("던지는 힘", () => {
       expect(spot.lift).toBeLessThan(normal[index].lift);
       expect(hard[index].lift).toBeGreaterThan(normal[index].lift);
     });
-    // 힘은 높이만 건드린다. 흩어지는 자리와 구르는 바퀴는 그 던지기의 것이다.
+    // 힘은 높이와 구르는 결만 건드린다. 흩어져 앉는 자리는 그 던지기의 것이라 그대로다.
     soft.forEach((spot, index) => {
       expect(spot.x).toBe(normal[index].x);
       expect(spot.z).toBe(normal[index].z);
-      expect(spot.turns).toBe(normal[index].turns);
+      expect(spot.yaw).toBe(normal[index].yaw);
     });
+  });
+
+  it("살살 던지면 일찍 내려앉아 바닥을 구르다 멎는다", () => {
+    // 낮게 뜬 채 공중에서 빠르게 돌면 붕 떠 보인다. 살살 던진 윷은 먼저 닿고 굴러야 한다.
+    const flags = [true, false, true, false];
+    const layout = layoutFor("event-roll", 4, "soft");
+    const views = makeViews(4);
+    const settle = settleMsOf(layout);
+
+    // 절반쯤 지난 뒤에는 이미 멍석에 닿아 있다.
+    let rolledFrames = 0;
+    let turnedWhileRolling = 0;
+    let previousRoll = Number.NaN;
+    for (let elapsed = Math.round(settle * 0.7); elapsed <= settle; elapsed += 10) {
+      applyToss(views, flags, layout, elapsed);
+      const group = views[0];
+      // 축은 굴러가는 자세만큼만 떠 있다. 그 이상 뜨면 아직 나는 중이다.
+      expect(group.position.y).toBeLessThanOrEqual(RADIUS + 1e-6);
+      rolledFrames += 1;
+      if (!Number.isNaN(previousRoll) && Math.abs(group.rotation.x - previousRoll) > 1e-4) {
+        turnedWhileRolling += 1;
+      }
+      previousRoll = group.rotation.x;
+    }
+    expect(rolledFrames).toBeGreaterThan(3);
+    // 닿은 뒤에도 한동안 구른다. 닿자마자 굳으면 미끄러지듯 멎어 어색하다.
+    expect(turnedWhileRolling).toBeGreaterThan(2);
+  });
+
+  it("살살 던지면 공중에서 덜 돈다", () => {
+    const soft = layoutFor("event-roll", 4, "soft");
+    const hard = layoutFor("event-roll", 4, "hard");
+    soft.forEach((spot, index) => {
+      expect(spot.turns).toBeLessThanOrEqual(hard[index].turns);
+      expect(spot.turns).toBeGreaterThanOrEqual(1);
+      expect(Number.isInteger(spot.turns)).toBe(true);
+    });
+    expect(soft.reduce((sum, spot) => sum + spot.turns, 0))
+      .toBeLessThan(hard.reduce((sum, spot) => sum + spot.turns, 0));
+  });
+
+  it("구르는 자세만큼만 축이 떠 있다", () => {
+    // 배가 아래면 낮게, 옆이나 등이 아래면 반지름만큼. 이걸 무시하면 구르다 멍석을 파고든다.
+    expect(rollHeight(0)).toBeCloseTo(CUT_DEPTH, 6);
+    expect(rollHeight(Math.PI)).toBeCloseTo(RADIUS, 6);
+    expect(rollHeight(Math.PI / 2)).toBeCloseTo(RADIUS, 6);
   });
 
   it("힘껏 던지면 멎는 데 걸리는 시간도 길어진다", () => {
