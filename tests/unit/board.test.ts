@@ -48,23 +48,25 @@ describe("Yut board routes", () => {
 
   it("ends the second shortcut at home instead of a far corner", () => {
     expect(getMoveOptions({ nodeId: "D4_1", routeId: "CENTER_B" }, 1)).toEqual([
-      { routeId: "CENTER_B", nodeId: "FINISH", finished: true, traversed: ["FINISH"] },
+      { routeId: "CENTER_B", nodeId: "GOAL", finished: false, traversed: ["GOAL"] },
     ]);
   });
 
   it("keeps every shortcut shorter than the outer lap", () => {
-    // 첫 모서리에 멈추고 방에도 멈추는 최단 경로는 11칸이다.
+    // 첫 모서리에 멈추고 방에도 멈추는 최단 경로는 11칸이고, 나려면 한 칸이 더 든다.
     expect(walk([5, 3, 2]).nodeId).toBe("D4_1");
-    expect(walk([5, 3, 3]).nodeId).toBe("FINISH");
+    expect(walk([5, 3, 3]).nodeId).toBe("GOAL");
+    expect(walk([5, 3, 4]).nodeId).toBe("FINISH");
     // 두 번째 모서리에 멈추고 방에도 멈추면 16칸이다.
     expect(walk([10, 3, 2]).nodeId).toBe("D4_1");
-    expect(walk([10, 3, 3]).nodeId).toBe("FINISH");
+    expect(walk([10, 3, 3]).nodeId).toBe("GOAL");
     // 방을 지나쳐 첫 지름길을 끝까지 타면 16칸이다.
     expect(walk([5, 4, 2, 4]).nodeId).toBe("O19");
-    expect(walk([5, 4, 2, 5]).nodeId).toBe("FINISH");
-    // 모서리에 한 번도 멈추지 않으면 바깥 길 20칸을 모두 돈다.
+    expect(walk([5, 4, 2, 5]).nodeId).toBe("GOAL");
+    // 모서리에 한 번도 멈추지 않으면 바깥 길은 스무 칸이고, 스물한 칸째에 난다.
     expect(walk([4, 4, 4, 4, 3]).nodeId).toBe("O19");
-    expect(walk([4, 4, 4, 4, 4]).nodeId).toBe("FINISH");
+    expect(walk([4, 4, 4, 4, 4]).nodeId).toBe("GOAL");
+    expect(walk([4, 4, 4, 4, 5]).nodeId).toBe("FINISH");
   });
 
   it("returns the prior outer node for back-do", () => {
@@ -109,15 +111,32 @@ describe("Yut board routes", () => {
     ]);
   });
 
-  it("finishes on exact home arrival", () => {
+  it("stops on the finish corner instead of going out", () => {
+    // 도착점은 설 수 있는 칸이다. 정확히 닿았다고 나는 것이 아니라, 거기서 한 칸 더 가야 난다.
     expect(getMoveOptions({ nodeId: "O19", routeId: "OUTER" }, 1)).toEqual([
+      { routeId: "OUTER", nodeId: "GOAL", finished: false, traversed: ["GOAL"] },
+    ]);
+  });
+
+  it("goes out when movement passes the finish corner", () => {
+    expect(getMoveOptions({ nodeId: "O19", routeId: "OUTER" }, 2)).toEqual([
+      { routeId: "OUTER", nodeId: "FINISH", finished: true, traversed: ["GOAL", "FINISH"] },
+    ]);
+  });
+
+  it.each([1, 2, 3, 4, 5])("sends a piece waiting on the finish corner out with any result (%i)", (distance) => {
+    // 걸로 도착점에 닿은 말은 다음 차례에 도 이상이면 난다.
+    expect(getMoveOptions({ nodeId: "GOAL", routeId: "OUTER" }, distance)).toEqual([
       { routeId: "OUTER", nodeId: "FINISH", finished: true, traversed: ["FINISH"] },
     ]);
   });
 
-  it("finishes when movement passes home", () => {
-    expect(getMoveOptions({ nodeId: "O19", routeId: "OUTER" }, 2)).toEqual([
-      { routeId: "OUTER", nodeId: "FINISH", finished: true, traversed: ["FINISH"] },
+  it("walks a piece on the finish corner back one station on a back-do", () => {
+    expect(getMoveOptions({ nodeId: "GOAL", routeId: "OUTER" }, -1)).toEqual([
+      { routeId: "OUTER", nodeId: "O19", finished: false, traversed: ["O19"] },
+    ]);
+    expect(getMoveOptions({ nodeId: "GOAL", routeId: "CENTER_B" }, -1)).toEqual([
+      { routeId: "CENTER_B", nodeId: "D4_1", finished: false, traversed: ["D4_1"] },
     ]);
   });
 });

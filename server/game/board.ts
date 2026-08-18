@@ -42,7 +42,7 @@ export const BOARD_NODES: Readonly<Record<string, BoardNode>> = Object.freeze({
   O16: node({ OUTER: "O17", CENTER_A: "O17" }, { OUTER: "O15", CENTER_A: "O15" }),
   O17: node({ OUTER: "O18", CENTER_A: "O18" }, { OUTER: "O16", CENTER_A: "O16" }),
   O18: node({ OUTER: "O19", CENTER_A: "O19" }, { OUTER: "O17", CENTER_A: "O17" }),
-  O19: node({ OUTER: "FINISH", CENTER_A: "FINISH" }, { OUTER: "O18", CENTER_A: "O18" }),
+  O19: node({ OUTER: "GOAL", CENTER_A: "GOAL" }, { OUTER: "O18", CENTER_A: "O18" }),
   D1_1: node({ CENTER_A: "D1_2" }, { CENTER_A: "O5" }),
   D1_2: node({ CENTER_A: "CENTER" }, { CENTER_A: "D1_1" }),
   // 방에 멈춘 말은 어느 지름길로 들어왔든 참으로 향하는 지름길로 빠진다.
@@ -56,15 +56,34 @@ export const BOARD_NODES: Readonly<Record<string, BoardNode>> = Object.freeze({
   D3_1: node({ CENTER_B: "D3_2" }, { CENTER_B: "O10" }),
   D3_2: node({ CENTER_B: "CENTER" }, { CENTER_B: "D3_1" }),
   D4_2: node({ CENTER_B: "D4_1" }, { CENTER_B: "CENTER" }),
-  D4_1: node({ CENTER_B: "FINISH" }, { CENTER_B: "D4_2" }),
+  D4_1: node({ CENTER_B: "GOAL" }, { CENTER_B: "D4_2" }),
   /**
    * 빽도로 출발점까지 되돌아온 자리. 판에는 시작점 모서리와 같은 곳에 그려지지만 O0과는 다른 칸이다.
    * 한 바퀴를 돌아 참 앞에 선 것으로 쳐서, 다음에 앞으로 나아가면 몇 칸이 나오든 난다.
    * 여기서 빽도가 또 나오면 원래 있던 도 자리로 돌아간다.
    */
   RETURN: node({ OUTER: "FINISH" }, { OUTER: "O1" }),
-  FINISH: node({}, { OUTER: "O19", CENTER_A: "O19", CENTER_B: "D4_1" }),
+  /**
+   * 한 바퀴를 다 돌아 도착점에 선 자리. 시작점 모서리와 같은 곳이다.
+   * 여기에 정확히 닿았다고 나는 것이 아니라, 다음에 한 칸이라도 더 가야 난다.
+   * 어느 길로 들어왔든 나가는 길은 하나뿐이라 앞으로는 늘 참으로 향한다.
+   */
+  GOAL: node(
+    // 지나쳐 가는 말은 들어온 길 이름을 그대로 지니므로 어느 이름으로도 참에 닿아야 한다.
+    // 길이 갈리지 않으니 forwardRoute는 두지 않는다. 그것은 지름길 길목의 표식이다.
+    { OUTER: "FINISH", CENTER_A: "FINISH", CENTER_B: "FINISH" },
+    { OUTER: "O19", CENTER_A: "O19", CENTER_B: "D4_1" },
+  ),
+  FINISH: node({}, { OUTER: "GOAL", CENTER_A: "GOAL", CENTER_B: "GOAL" }),
 });
+
+/**
+ * 판에 그려지는 한 칸. 도착점 모서리는 어떻게 들어섰느냐에 따라 칸 이름이 둘이지만
+ * 눈에는 같은 자리이므로, 잡기와 업기는 이 이름으로 견준다.
+ */
+export function squareOf(nodeId: string): string {
+  return nodeId === "RETURN" ? "GOAL" : nodeId;
+}
 
 function routesForMove(node: BoardNode, routeId: RouteId, distance: number): RouteId[] {
   if (distance > 0 && node.forwardRoute) {

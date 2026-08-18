@@ -260,8 +260,8 @@ describe("game reducer", () => {
   });
 
   it("traces every piece of a stack and the virtual finish node", () => {
-    let state = placePiece(individualGame(), "A1-1", { nodeId: "O19", routeId: "OUTER" });
-    state = placePiece(state, "A1-2", { nodeId: "O19", routeId: "OUTER" });
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "GOAL", routeId: "OUTER" });
+    state = placePiece(state, "A1-2", { nodeId: "GOAL", routeId: "OUTER" });
     // 같은 칸의 두 말을 한 묶음으로 묶어 함께 움직이게 한다.
     state = {
       ...state,
@@ -398,12 +398,39 @@ describe("game reducer", () => {
     expect(teamState.pieces.filter((piece) => piece.teamId === "A")).toHaveLength(4);
   });
 
+  it("걸로 도착점에 닿은 말은 다음 차례에 도가 나와야 난다", () => {
+    // 도착점은 설 수 있는 칸이다. 정확히 닿았다고 나는 것이 아니라 한 칸을 더 가야 난다.
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O17", routeId: "OUTER" });
+    state = throwYut(state, "A1", "GEOL", 3);
+    state = movePiece(state, "A1", "A1-1");
+
+    expect(nodeOf(state, "A1-1")).toBe("GOAL");
+    expect(state.pieces.find((piece) => piece.id === "A1-1")?.status).toBe("BOARD");
+
+    // 이동으로 차례는 이미 넘어갔다. 상대가 한 번 두면 다시 내 차례다.
+    expect(state.currentPlayerId).toBe("B1");
+    state = endTurn(state);
+    state = throwYut(state, "A1", "DO", 1);
+    state = movePiece(state, "A1", "A1-1");
+
+    expect(state.pieces.find((piece) => piece.id === "A1-1")?.status).toBe("FINISHED");
+  });
+
+  it("윷이 나오면 도착점을 지나 그 자리에서 난다", () => {
+    let state = placePiece(individualGame(), "A1-1", { nodeId: "O17", routeId: "OUTER" });
+    state = throwYut(state, "A1", "YUT", 4, 1);
+    state = throwYut(state, "A1", "DO", 1);
+    state = movePiece(state, "A1", "A1-1", "YUT");
+
+    expect(state.pieces.find((piece) => piece.id === "A1-1")?.status).toBe("FINISHED");
+  });
+
   it("sets an individual winner after all four owned pieces finish", () => {
     let state = individualGame();
     state = placePiece(state, "A1-1", "FINISHED");
     state = placePiece(state, "A1-2", "FINISHED");
     state = placePiece(state, "A1-3", "FINISHED");
-    state = placePiece(state, "A1-4", { nodeId: "O19", routeId: "OUTER" });
+    state = placePiece(state, "A1-4", { nodeId: "GOAL", routeId: "OUTER" });
     state = throwYut(state, "A1", "DO", 1);
 
     const next = movePiece(state, "A1", "A1-4");
@@ -429,7 +456,7 @@ describe("game reducer", () => {
     state = placePiece(state, "A-1", "FINISHED");
     state = placePiece(state, "A-2", "FINISHED");
     state = placePiece(state, "A-3", "FINISHED");
-    state = placePiece(state, "A-4", { nodeId: "O19", routeId: "OUTER" });
+    state = placePiece(state, "A-4", { nodeId: "GOAL", routeId: "OUTER" });
     state = throwYut(state, "A1", "DO", 1);
 
     const next = movePiece(state, "A1", "A-4");
@@ -582,8 +609,8 @@ describe("game reducer", () => {
         result: "YUT",
         legalPieceIds: ["A1-1", "A1-2", "A1-3", "A1-4"],
         moves: [
-          // 참으로 나는 말은 판에 좌표가 없는 FINISH로 간다.
-          { pieceId: "A1-1", destinationNodeId: "FINISH", path: ["FINISH"], finished: true },
+          // 참으로 나는 말은 판에 좌표가 없는 FINISH로 간다. 도착점을 밟고 지나간다.
+          { pieceId: "A1-1", destinationNodeId: "FINISH", path: ["GOAL", "FINISH"], finished: true },
           { pieceId: "A1-2", destinationNodeId: "O4", path: ["O1", "O2", "O3", "O4"], finished: false },
           { pieceId: "A1-3", destinationNodeId: "O4", path: ["O1", "O2", "O3", "O4"], finished: false },
           { pieceId: "A1-4", destinationNodeId: "O4", path: ["O1", "O2", "O3", "O4"], finished: false },

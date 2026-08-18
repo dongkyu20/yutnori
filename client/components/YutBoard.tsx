@@ -64,6 +64,15 @@ function onBoard(nodeId: string): boolean {
 }
 
 /**
+ * 그 칸이 실제로 그려지는 자리.
+ * 도착점 모서리는 들어선 방식에 따라 이름이 둘이지만 좌표가 없어 시작점 모서리에 겹쳐 그린다.
+ * 겹치는 것끼리는 같은 자리로 봐야 갈 곳 표시가 거기 선 말을 가리지 않는다.
+ */
+function drawnAt(nodeId: string): string {
+  return onBoard(nodeId) ? nodeId : START_NODE_ID;
+}
+
+/**
  * 고른 말이 갈 수 있는 곳을 결과마다 하나씩 모은다.
  * 잡을 수 있는지는 서버가 따로 보내 주지 않아도 된다. 도착 칸에 남의 말이 서 있는지 보면 안다.
  */
@@ -81,7 +90,7 @@ function choicesFor(
   // 말이 서 있는 칸에는 표시를 겹쳐 놓지 않는다. 겹치면 그 말을 눌러 고를 수 없다.
   // 업어 가려고 내 말 위를 목적지로 삼을 때 실제로 일어난다.
   const occupied = new Set(
-    pieces.flatMap((piece) => (piece.status === "BOARD" && piece.nodeId ? [piece.nodeId] : [])),
+    pieces.flatMap((piece) => (piece.status === "BOARD" && piece.nodeId ? [drawnAt(piece.nodeId)] : [])),
   );
 
   return pendingThrows.flatMap((pending) => {
@@ -91,7 +100,7 @@ function choicesFor(
       piece.status === "BOARD"
       && piece.nodeId === move.destinationNodeId
       && (piece.teamId ?? piece.ownerId) !== controllerId);
-    const markerNodeId = onBoard(move.destinationNodeId) ? move.destinationNodeId : START_NODE_ID;
+    const markerNodeId = drawnAt(move.destinationNodeId);
     const stack = perNode.get(markerNodeId) ?? 0;
     perNode.set(markerNodeId, stack + 1);
 
@@ -173,6 +182,8 @@ function describeNode(nodeId: string): string {
   if (nodeId === "CENTER") return "가운데 지점";
   // 빽도로 출발점까지 되돌아온 자리. 판에는 시작점 모서리에 겹쳐 그려진다.
   if (nodeId === "RETURN") return "되돌아온 출발점, 다음 이동에 완주";
+  // 한 바퀴를 다 돌아 선 자리. 여기서 한 칸이라도 더 가야 난다.
+  if (nodeId === "GOAL") return "도착점, 다음 이동에 완주";
   if (nodeId.startsWith("O")) return `바깥 지점 ${Number(nodeId.slice(1))}`;
   const match = /^D(\d)_(\d)$/.exec(nodeId);
   return match ? `대각선 지점 ${match[1]}-${match[2]}` : nodeId;

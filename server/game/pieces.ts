@@ -1,4 +1,4 @@
-import { getMoveOptions } from "./board";
+import { getMoveOptions, squareOf } from "./board";
 import type {
   MoveOption,
   MoveResolution,
@@ -130,11 +130,15 @@ export function movePieces(
     };
   }
 
+  // 도착점 모서리는 어떻게 들어섰느냐에 따라 칸 이름이 둘이다. 눈에는 같은 자리이므로
+  // 이름이 아니라 자리로 견주어야 거기 선 말을 잡거나 업을 수 있다.
+  const destinationSquare = squareOf(move.option.nodeId);
   const destinationPieces = pieces.filter(
     (piece) =>
       !movingIds.has(piece.id) &&
       piece.status === "BOARD" &&
-      piece.position?.nodeId === move.option.nodeId,
+      piece.position !== undefined &&
+      squareOf(piece.position.nodeId) === destinationSquare,
   );
   const capturedPieces = destinationPieces.filter((piece) => !areFriendly(selectedPiece, piece));
   const capturedIds = new Set(capturedPieces.map((piece) => piece.id));

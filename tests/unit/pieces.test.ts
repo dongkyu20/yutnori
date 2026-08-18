@@ -187,6 +187,43 @@ describe("piece rules", () => {
     ]);
   });
 
+  it("treats the two names of the finish corner as one square", () => {
+    // 빽도로 되돌아온 자리와 한 바퀴 돌아 선 도착점은 이름만 둘일 뿐 판에서는 같은 모서리다.
+    // 따로 세면 같은 자리에 선 두 말이 서로를 못 보고 지나친다.
+    const pieces = [
+      piece({ id: "A-1", ownerId: "A1", status: "BOARD", position: { nodeId: "O1", routeId: "OUTER" } }),
+      piece({ id: "B-1", ownerId: "B1", status: "BOARD", position: { nodeId: "GOAL", routeId: "OUTER" } }),
+    ];
+
+    const resolution = movePieces(pieces, {
+      pieceId: "A-1",
+      option: getMoveOptions({ nodeId: "O1", routeId: "OUTER" }, -1)[0],
+    });
+
+    expect(resolution.capturedPieceIds).toEqual(["B-1"]);
+    expect(resolution.pieces.find((entry) => entry.id === "B-1")).toEqual({
+      id: "B-1", ownerId: "B1", status: "HOME",
+    });
+  });
+
+  it("stacks onto a friend already standing on the finish corner", () => {
+    const pieces = [
+      piece({ id: "A-1", ownerId: "A1", status: "BOARD", position: { nodeId: "O19", routeId: "OUTER" } }),
+      piece({ id: "A-2", ownerId: "A1", status: "BOARD", position: { nodeId: "RETURN", routeId: "OUTER" }, stackId: "A-2" }),
+    ];
+
+    const resolution = movePieces(pieces, {
+      pieceId: "A-1",
+      option: getMoveOptions({ nodeId: "O19", routeId: "OUTER" }, 1)[0],
+    });
+
+    expect(resolution.capturedPieceIds).toEqual([]);
+    // 업힌 두 말은 한 이름의 칸에 모여 함께 움직인다.
+    const stacked = resolution.pieces.filter((entry) => entry.stackId === "A-2");
+    expect(stacked.map((entry) => entry.id)).toEqual(["A-1", "A-2"]);
+    expect(new Set(stacked.map((entry) => entry.position?.nodeId))).toEqual(new Set(["GOAL"]));
+  });
+
   it("rejects back-do when all owned pieces are home", () => {
     const pieces = [
       piece({ id: "A-1", ownerId: "A1" }),
