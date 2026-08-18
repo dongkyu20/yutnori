@@ -7,6 +7,9 @@ import {
   frameCamera,
   layoutFor,
   restHeight,
+  settleMsOf,
+  styleFor,
+  TOSS_STYLES,
   restRoll,
   tossLift,
   CONTENT,
@@ -15,8 +18,6 @@ import {
   FOV,
   LENGTH,
   RADIUS,
-  STAGGER_MS,
-  TOSS_MS,
 } from "../../client/three/yutStick";
 
 const EPS = 1e-6;
@@ -159,6 +160,36 @@ describe("내려앉은 자세", () => {
   });
 });
 
+describe("던지는 손버릇", () => {
+  it("던질 때마다 손버릇이 달라지되 같은 던지기는 늘 같다", () => {
+    // 자리만 흩어지고 동작이 늘 같으면 백 번을 던져도 한 번 본 것과 같다.
+    expect(styleFor("event-7")).toEqual(styleFor("event-7"));
+    const picked = new Set(
+      Array.from({ length: 120 }, (unusedValue, index) => styleFor("event-" + index).id),
+    );
+    expect(picked.size).toBeGreaterThan(1);
+    // 준비한 손버릇은 모두 언젠가 나와야 한다. 안 나오는 것은 없는 것과 같다.
+    expect(picked).toEqual(new Set(TOSS_STYLES.map((style) => style.id)));
+  });
+
+  it("손버릇마다 높이와 걸리는 시간이 서로 다르다", () => {
+    const lifts = new Set(TOSS_STYLES.map((style) => style.lift));
+    const spans = new Set(TOSS_STYLES.map((style) => style.tossMs));
+    expect(lifts.size).toBeGreaterThan(1);
+    expect(spans.size).toBeGreaterThan(1);
+  });
+
+  it("그 던지기의 연출 길이를 알려 준다", () => {
+    // 차례 패널이 이 값으로 결과 글자를 미룬다. 실제 연출보다 짧으면 결과가 미리 새어 나간다.
+    const layout = layoutFor("event-toss", 4);
+    const settle = settleMsOf(layout);
+    layout.forEach((spot) => {
+      expect(spot.delayMs + spot.tossMs).toBeLessThanOrEqual(settle);
+    });
+    expect(settle).toBe(Math.max(...layout.map((spot) => spot.delayMs + spot.tossMs)));
+  });
+});
+
 describe("던져 굴리기", () => {
   const flags = [true, false, true, false];
 
@@ -178,12 +209,13 @@ describe("던져 굴리기", () => {
     const views = makeViews(4);
     const layout = layoutFor("event-toss", views.length);
 
-    applyToss(views, flags, layout, TOSS_MS * 0.3);
-    views.forEach((group, index) => {
-      expect(group.position.y).toBeGreaterThan(restHeight(flags[index]) + 0.5);
+    // 가락마다 나는 때와 걸리는 시간이 다르므로 저마다의 한가운데에서 살핀다.
+    layout.forEach((spot, index) => {
+      applyToss(views, flags, layout, spot.delayMs + spot.tossMs * 0.35);
+      expect(views[index].position.y).toBeGreaterThan(restHeight(flags[index]) + 0.5);
     });
 
-    const settled = applyToss(views, flags, layout, TOSS_MS + STAGGER_MS * 4);
+    const settled = applyToss(views, flags, layout, settleMsOf(layout));
     expect(settled).toBe(false);
 
     const rested = makeViews(4);
@@ -198,8 +230,8 @@ describe("던져 굴리기", () => {
     const views = makeViews(4);
     const layout = layoutFor("event-toss", views.length);
 
-    for (let elapsed = 0; elapsed <= TOSS_MS + STAGGER_MS * 4; elapsed += 12) {
-      expect(tossLift(elapsed / TOSS_MS)).toBeGreaterThanOrEqual(0);
+    for (let elapsed = 0; elapsed <= settleMsOf(layout); elapsed += 12) {
+      expect(tossLift(elapsed / settleMsOf(layout))).toBeGreaterThanOrEqual(0);
       applyToss(views, flags, layout, elapsed);
       views.forEach((group, index) => {
         expect(group.position.y).toBeGreaterThanOrEqual(restHeight(flags[index]) - EPS);
@@ -219,8 +251,9 @@ describe("구도", () => {
     camera.updateMatrixWorld(true);
 
     let widest = 0;
-    [-1, 1].forEach((signX) => [-1, 1].forEach((signY) => [-1, 1].forEach((signZ) => {
-      const ndc = new THREE.Vector3(CONTENT.x * signX, CONTENT.y * signY, CONTENT.z * signZ)
+    // 멍석 바닥부터 윷이 날아오르는 높이까지가 담겨야 한다. 아래쪽은 볼 일이 없다.
+    [-1, 1].forEach((signX) => [0, 1].forEach((heightRatio) => [-1, 1].forEach((signZ) => {
+      const ndc = new THREE.Vector3(CONTENT.x * signX, CONTENT.y * heightRatio, CONTENT.z * signZ)
         .project(camera);
       expect(Math.abs(ndc.x)).toBeLessThanOrEqual(1);
       expect(Math.abs(ndc.y)).toBeLessThanOrEqual(1);

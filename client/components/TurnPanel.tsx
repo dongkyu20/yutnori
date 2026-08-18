@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { PublicGameState } from "../../shared/protocol";
-import { SETTLE_MS } from "../three/yutStick";
+import { settleMsFor } from "../three/yutStick";
 import { YutSticks } from "./YutSticks";
 
 interface TurnPanelProps {
@@ -53,7 +53,8 @@ export function TurnPanel({
     if (!throwState.rolling) return;
     const timer = window.setTimeout(
       () => setThrowState((current) => ({ ...current, rolling: false })),
-      SETTLE_MS,
+      // 던지기마다 손버릇이 달라 연출 길이도 다르다. 그 던지기의 길이를 그대로 쓴다.
+      settleMsFor(throwState.eventId ?? ""),
     );
     return () => window.clearTimeout(timer);
   }, [throwState.eventId, throwState.rolling]);

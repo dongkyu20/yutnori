@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PublicGameState, PublicRoomSnapshot } from "../../shared/protocol";
 import { TurnPanel } from "../../client/components/TurnPanel";
-import { SETTLE_MS } from "../../client/three/yutStick";
+import { settleMsFor } from "../../client/three/yutStick";
 import { GameScreen } from "../../client/components/GameScreen";
 
 function createGame(overrides: Partial<PublicGameState> = {}): PublicGameState {
@@ -137,7 +137,8 @@ describe("TurnPanel", () => {
     );
     expect(screen.queryByText("던진 결과: 모")).not.toBeInTheDocument();
 
-    act(() => vi.advanceTimersByTime(SETTLE_MS - 50));
+    const settleMs = settleMsFor("event-2");
+    act(() => vi.advanceTimersByTime(settleMs - 50));
     expect(screen.queryByText("던진 결과: 모")).not.toBeInTheDocument();
 
     act(() => vi.advanceTimersByTime(50));
@@ -246,7 +247,7 @@ describe("TurnPanel", () => {
     expect(secondAnimatedSticks).not.toBe(firstAnimatedSticks);
     expect(secondAnimatedSticks).toHaveAttribute("data-animating", "true");
 
-    act(() => vi.advanceTimersByTime(SETTLE_MS));
+    act(() => vi.advanceTimersByTime(settleMsFor("event-3")));
     expect(screen.getByTestId("yut-sticks")).not.toHaveAttribute("data-animating", "true");
   });
 
