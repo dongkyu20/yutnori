@@ -377,6 +377,23 @@ describe("game reducer", () => {
     expect(nodeOf(state, "A1-1")).toBe("O4");
   });
 
+  it("alternates two teams and gives only those teams pieces", () => {
+    // 팀이 둘뿐이어도 판은 선다. 빈 팀의 말은 아예 놓지 않는다.
+    const state = createGame({
+      mode: "team",
+      players: [
+        { id: "A1", teamId: "A" },
+        { id: "A2", teamId: "A" },
+        { id: "B1", teamId: "B" },
+        { id: "B2", teamId: "B" },
+      ],
+    });
+
+    expect(state.turnOrder).toEqual(["A1", "B1", "A2", "B2"]);
+    expect(state.pieces).toHaveLength(8);
+    expect(new Set(state.pieces.map((piece) => piece.teamId))).toEqual(new Set(["A", "B"]));
+  });
+
   it("rotates the eight-player team order after bonuses", () => {
     const teamState = createGame({
       mode: "team",

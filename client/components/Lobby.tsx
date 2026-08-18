@@ -95,7 +95,7 @@ export function Lobby({ session }: { session: LobbySessionApi }) {
             2–4명 개인전
           </button>
           <button className="lobby-mode__button" type="button" aria-pressed={mode === "team"} onClick={() => setMode("team")} disabled={!canInteract || submitting}>
-            8명 · 4팀 대항전
+            4·6·8명 팀 대항전
           </button>
         </div>
         <button className="lobby-action" type="button" onClick={() => void createRoom()} disabled={!canInteract || submitting}>
@@ -129,7 +129,7 @@ export function Lobby({ session }: { session: LobbySessionApi }) {
 
       <aside className="lobby-card lobby-card--note" aria-label="간단한 게임 규칙">
         <h2>게임 방법</h2>
-        <p>개인전은 2~4명이, 팀 대항전은 8명이 모여 윷을 던집니다. 모든 말이 먼저 도착하면 승리해요.</p>
+        <p>개인전은 2~4명이, 팀 대항전은 두 명씩 짝을 지어 4·6·8명이 모여 윷을 던집니다. 모든 말이 먼저 도착하면 승리해요.</p>
         {!canInteract && <p className="lobby-help">서버에 연결되면 방을 만들고 참가할 수 있어요.</p>}
       </aside>
 

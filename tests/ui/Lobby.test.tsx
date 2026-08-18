@@ -40,7 +40,7 @@ describe("Lobby", () => {
     const { requests } = renderLobby();
 
     await user.type(screen.getByLabelText("닉네임"), "  한판  ");
-    await user.click(screen.getByRole("button", { name: "8명 · 4팀 대항전" }));
+    await user.click(screen.getByRole("button", { name: "4·6·8명 팀 대항전" }));
     await user.click(screen.getByRole("button", { name: "팀 대항전 방 만들기" }));
 
     expect(requests).toEqual([{ nickname: "한판", mode: "team" }]);

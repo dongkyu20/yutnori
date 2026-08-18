@@ -242,6 +242,57 @@ describe("RoomService lobby lifecycle", () => {
     expect(started.game?.currentPlayerId).toBe(sessions[0].playerId);
   });
 
+  /** 팀전 방을 만들고, 준 팀 배정대로 모두 준비까지 시킨다. */
+  function readyTeamRoom(service: RoomService, teams: readonly TeamId[]): { sessions: SessionResult[]; snapshot: PublicRoomSnapshot } {
+    const names = ["Host", "Able", "Baker", "Charlie", "Delta", "Echo", "Foxtrot", "Golf"];
+    const sessions = createPlayers(service, "team", names.slice(0, teams.length));
+    let snapshot = sessions.at(-1)!.snapshot;
+    for (let index = 0; index < sessions.length; index += 1) {
+      snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+        type: "ASSIGN_TEAM", playerId: sessions[index].playerId, teamId: teams[index],
+      });
+      snapshot = dispatch(service, sessions[index].playerId, snapshot, { type: "SET_READY", ready: true });
+    }
+    return { sessions, snapshot };
+  }
+
+  it.each([
+    [["A", "A", "B", "B"] as TeamId[], 4, 2],
+    [["A", "A", "B", "B", "C", "C"] as TeamId[], 6, 3],
+    [["A", "A", "B", "B", "C", "C", "D", "D"] as TeamId[], 8, 4],
+  ])("starts a team game with %j (%i명, %i팀)", (teams, headcount, teamCount) => {
+    // 두 명씩 짝을 이루기만 하면 팀이 둘이든 넷이든 한 판이 선다.
+    const service = new RoomService(new FakeClock().options());
+    const { sessions, snapshot } = readyTeamRoom(service, teams);
+
+    const started = dispatch(service, sessions[0].playerId, snapshot, { type: "START_GAME" });
+
+    expect(started.phase).toBe("playing");
+    expect(started.players).toHaveLength(headcount);
+    // 팀마다 말 넷. 빈 팀의 말은 판에 놓지 않는다.
+    expect(started.game?.pieces).toHaveLength(teamCount * 4);
+    expect(new Set(started.game?.pieces.map((piece) => piece.teamId)).size).toBe(teamCount);
+  });
+
+  it("keeps a team game from starting with a single team", () => {
+    // 혼자인 팀만 있으면 겨룰 상대가 없다.
+    const service = new RoomService(new FakeClock().options());
+    const { sessions, snapshot } = readyTeamRoom(service, ["A", "A"]);
+
+    expect(roomError(() =>
+      dispatch(service, sessions[0].playerId, snapshot, { type: "START_GAME" }),
+    ).code).toBe("INVALID_TEAM_COMPOSITION");
+  });
+
+  it("keeps a team game from starting while a team is short a member", () => {
+    const service = new RoomService(new FakeClock().options());
+    const { sessions, snapshot } = readyTeamRoom(service, ["A", "A", "B"]);
+
+    expect(roomError(() =>
+      dispatch(service, sessions[0].playerId, snapshot, { type: "START_GAME" }),
+    ).code).toBe("INVALID_TEAM_COMPOSITION");
+  });
+
   it("rejects a team start until every team has two members", () => {
     const service = new RoomService(new FakeClock().options());
     const [host, guest] = createPlayers(service, "team", ["Host", "Guest"]);

@@ -655,15 +655,27 @@ export class RoomService {
       };
     }
     if (room.mode === "team") {
+      // 팀은 둘씩 짝을 이루기만 하면 된다. 팀이 둘이면 4명, 셋이면 6명, 넷이면 8명이다.
+      // 빈 팀은 아예 판에 오르지 않으므로 넷을 다 채우라고 붙잡아 둘 까닭이 없다.
       const teams: TeamId[] = ["A", "B", "C", "D"];
-      const compositionIsValid = room.players.length === 8 && teams.every(
-        (teamId) => room.players.filter((player) => player.teamId === teamId).length === 2,
+      const sizes = teams.map((teamId) =>
+        room.players.filter((player) => player.teamId === teamId).length,
       );
-      if (!compositionIsValid) {
+      const filledTeams = sizes.filter((size) => size > 0);
+      const everyoneHasATeam = room.players.every((player) => player.teamId !== undefined);
+
+      if (!everyoneHasATeam || filledTeams.some((size) => size !== 2)) {
         return {
           canStart: false,
           code: "INVALID_TEAM_COMPOSITION",
-          reason: "각 팀에 2명이 필요합니다.",
+          reason: "팀을 이룬 모든 참가자가 두 명씩 짝을 이뤄야 합니다.",
+        };
+      }
+      if (filledTeams.length < 2) {
+        return {
+          canStart: false,
+          code: "INVALID_TEAM_COMPOSITION",
+          reason: "겨룰 팀이 둘 이상 필요합니다. 4명, 6명, 8명으로 할 수 있습니다.",
         };
       }
     }

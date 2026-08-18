@@ -82,7 +82,7 @@ export async function closePlayers(players: readonly BrowserPlayer[]): Promise<v
 export async function createRoom(host: BrowserPlayer, mode: "individual" | "team"): Promise<string> {
   await host.page.getByLabel("닉네임").fill(host.nickname);
   if (mode === "team") {
-    await host.page.getByRole("button", { name: "8명 · 4팀 대항전" }).click();
+    await host.page.getByRole("button", { name: "4·6·8명 팀 대항전" }).click();
   }
   await host.page.getByRole("button", {
     name: mode === "team" ? "팀 대항전 방 만들기" : "개인전 방 만들기",
