@@ -1,4 +1,4 @@
-import type { GameMode, TeamId } from "../../shared/protocol";
+import type { GameMode, TeamId, ThrowPower } from "../../shared/protocol";
 
 export type YutResult = "BACK_DO" | "DO" | "GAE" | "GEOL" | "YUT" | "MO";
 
@@ -88,6 +88,8 @@ export interface GameState {
   pieces: Piece[];
   lastThrow: ThrowOutcome | null;
   lastThrowEventId: string | null;
+  /** 마지막 던지기에 실린 힘. 모두가 같은 높이로 연출하도록 스냅숏에 실어 보낸다. */
+  lastThrowPower: ThrowPower;
   lastMove: MoveTrace | null;
   pendingThrows: PendingThrow[];
   selectedThrowId: string | null;
@@ -108,6 +110,6 @@ export interface GameState {
 }
 
 export type GameCommand =
-  | { type: "THROW"; actorId: string; outcome: ThrowOutcome }
+  | { type: "THROW"; actorId: string; outcome: ThrowOutcome; power?: ThrowPower }
   | { type: "SELECT_PIECE"; actorId: string; throwId: string; pieceId: string }
   | { type: "SELECT_ROUTE"; actorId: string; routeId: string };

@@ -38,7 +38,7 @@ function createGame(overrides: Partial<PublicGameState> = {}): PublicGameState {
     lastThrow: {
       eventId: "event-1",
       result: "GAE",
-      sticks: [true, true, false, false],
+      sticks: [true, true, false, false], power: "normal" as const,
     },
     lastMove: null,
     winnerId: null,

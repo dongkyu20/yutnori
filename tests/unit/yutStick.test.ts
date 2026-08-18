@@ -7,6 +7,8 @@ import {
   frameCamera,
   layoutFor,
   restHeight,
+  liftScaleOf,
+  settleMsFor,
   settleMsOf,
   styleFor,
   TOSS_STYLES,
@@ -187,6 +189,37 @@ describe("던지는 손버릇", () => {
       expect(spot.delayMs + spot.tossMs).toBeLessThanOrEqual(settle);
     });
     expect(settle).toBe(Math.max(...layout.map((spot) => spot.delayMs + spot.tossMs)));
+  });
+});
+
+describe("던지는 힘", () => {
+  it("힘껏 던지면 더 높이 뜨고 살살 던지면 낮게 뜬다", () => {
+    // 높이는 던지는 사람이 고른다. 세 단계가 눈에 띄게 달라야 고르는 재미가 있다.
+    const soft = layoutFor("event-9", 4, "soft");
+    const normal = layoutFor("event-9", 4, "normal");
+    const hard = layoutFor("event-9", 4, "hard");
+
+    soft.forEach((spot, index) => {
+      expect(spot.lift).toBeLessThan(normal[index].lift);
+      expect(hard[index].lift).toBeGreaterThan(normal[index].lift);
+    });
+    // 힘은 높이만 건드린다. 흩어지는 자리와 구르는 바퀴는 그 던지기의 것이다.
+    soft.forEach((spot, index) => {
+      expect(spot.x).toBe(normal[index].x);
+      expect(spot.z).toBe(normal[index].z);
+      expect(spot.turns).toBe(normal[index].turns);
+    });
+  });
+
+  it("힘껏 던지면 멎는 데 걸리는 시간도 길어진다", () => {
+    expect(settleMsFor("event-9", "hard")).toBeGreaterThan(settleMsFor("event-9", "normal"));
+    expect(settleMsFor("event-9", "soft")).toBeLessThan(settleMsFor("event-9", "normal"));
+  });
+
+  it("힘을 알려 주지 않으면 보통으로 던진다", () => {
+    // 시간이 다 되어 서버가 알아서 던질 때는 고른 힘이 없다.
+    expect(layoutFor("event-9", 4)).toEqual(layoutFor("event-9", 4, "normal"));
+    expect(liftScaleOf("normal")).toBe(1);
   });
 });
 

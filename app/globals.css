@@ -510,6 +510,23 @@ button, input, select, textarea { min-height: 44px; }
   from { opacity: 0; transform: translate(-50%, calc(-50% + var(--choice-nudge, 0rem) + var(--choice-stack, 0) * 2.9rem)) scale(.8); }
 }
 
+/* 던지는 힘 고르기: 던지기 단추 바로 위에 둔다. 던지기 직전에 손이 머무는 자리다. */
+.throw-controls { display: grid; gap: .5rem; }
+.throw-power { display: flex; gap: .4rem; border: 0; margin: 0; padding: 0; }
+.throw-power legend { padding: 0 0 .35rem; font-size: .8rem; font-weight: 900; color: var(--muted-ink); }
+.throw-power__option {
+  flex: 1; min-width: 44px;
+  border: 2px solid var(--ink); border-radius: .7rem;
+  background: var(--paper); color: var(--ink);
+  padding: .45rem .3rem; font-weight: 800; cursor: pointer;
+}
+.throw-power__option[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--gold) 32%, var(--paper));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ink) 45%, transparent);
+}
+.throw-power:disabled .throw-power__option { opacity: .5; cursor: default; }
+.throw-power__hint { margin: 0; font-size: .78rem; color: var(--muted-ink); }
+
 .turn-panel__throw { width: 100%; min-height: 3.25rem; border: 2px solid var(--ink); border-radius: .75rem; background: var(--jade); color: #FFF; font-size: 1.05rem; font-weight: 900; cursor: pointer; }
 .turn-panel__throw:disabled { background: #767676; cursor: not-allowed; }
 

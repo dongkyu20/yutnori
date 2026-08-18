@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ThrowPower } from "../../shared/protocol";
 import {
   applyRest,
   applyToss,
@@ -20,6 +21,8 @@ interface YutSticksProps {
   animating: boolean;
   /** 던질 때마다 바뀌는 값. 굴림과 흩어짐을 다시 만든다. */
   throwKey: string;
+  /** 던진 사람이 고른 힘. 서버가 되돌려 준 값이라 모두 같은 높이로 본다. */
+  power?: ThrowPower;
 }
 
 interface Stage {
@@ -291,7 +294,7 @@ function buildStage(THREE: ThreeModule, canvas: HTMLCanvasElement, count: number
   return { renderer, scene, camera, views, disposables, lost: false };
 }
 
-export function YutSticks({ sticks, animating, throwKey }: YutSticksProps) {
+export function YutSticks({ sticks, animating, throwKey, power = "normal" }: YutSticksProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<Stage | null>(null);
   const frameRef = useRef(0);
@@ -301,9 +304,9 @@ export function YutSticks({ sticks, animating, throwKey }: YutSticksProps) {
   const stickKey = sticks.map((flat) => (flat ? "1" : "0")).join("");
   // 부모가 매번 새 배열을 넘겨도 결과가 같으면 굴림을 다시 시작하지 않는다.
   const flags = useMemo(() => [...stickKey].map((flag) => flag === "1"), [stickKey]);
-  const poseRef = useRef({ flags, throwKey });
+  const poseRef = useRef({ flags, throwKey, power });
 
-  useEffect(() => { poseRef.current = { flags, throwKey }; }, [flags, throwKey]);
+  useEffect(() => { poseRef.current = { flags, throwKey, power }; }, [flags, throwKey, power]);
 
   // three는 WebGL이 있을 때만 내려받는다. 무대는 한 번만 만들고 크기 변화에만 반응한다.
   useEffect(() => {
@@ -339,7 +342,7 @@ export function YutSticks({ sticks, animating, throwKey }: YutSticksProps) {
       };
 
       const pose = poseRef.current;
-      applyRest(stage.views, pose.flags, layoutFor(pose.throwKey, stage.views.length));
+      applyRest(stage.views, pose.flags, layoutFor(pose.throwKey, stage.views.length, pose.power));
       resize();
       observer = new ResizeObserver(resize);
       observer.observe(canvas);
@@ -365,7 +368,7 @@ export function YutSticks({ sticks, animating, throwKey }: YutSticksProps) {
     const stage = stageRef.current;
     if (!stage || stage.lost) return;
 
-    const layout = layoutFor(throwKey, stage.views.length);
+    const layout = layoutFor(throwKey, stage.views.length, power);
     const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
     if (!animating || reduceMotion || tossRef.current.key === throwKey) {
@@ -387,7 +390,7 @@ export function YutSticks({ sticks, animating, throwKey }: YutSticksProps) {
     };
     cancelAnimationFrame(frameRef.current);
     frameRef.current = requestAnimationFrame(step);
-  }, [flags, animating, throwKey, webgl]);
+  }, [flags, animating, throwKey, power, webgl]);
 
   return (
     <div className={`yut-stage${webgl ? " yut-stage--3d" : ""}`}>

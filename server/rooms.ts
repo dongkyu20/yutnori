@@ -364,6 +364,7 @@ export class RoomService {
           type: "THROW",
           actorId: actor.id,
           outcome: throwYut(this.options.random),
+          ...(command.power ? { power: command.power } : {}),
         });
         return;
       case "SELECT_PIECE":

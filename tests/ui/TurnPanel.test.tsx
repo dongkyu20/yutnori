@@ -83,7 +83,7 @@ describe("TurnPanel", () => {
     render(
       <TurnPanel
         game={createGame({
-          lastThrow: { eventId: `event-${result}`, result, sticks: [true, false, false, false] },
+          lastThrow: { eventId: `event-${result}`, result, sticks: [true, false, false, false], power: "normal" as const },
         })}
         currentPlayerNickname="민수"
         isCurrentPlayer
@@ -116,11 +116,76 @@ describe("TurnPanel", () => {
     expect(onThrow).toHaveBeenCalledTimes(2);
   });
 
+  it("고른 힘을 던지기에 실어 보낸다", async () => {
+    const user = userEvent.setup();
+    const onThrow = vi.fn();
+    render(
+      <TurnPanel
+        game={createGame()}
+        currentPlayerNickname="민수"
+        isCurrentPlayer
+        onThrow={onThrow}
+      />,
+    );
+
+    // 아무것도 고르지 않았으면 보통이다.
+    expect(screen.getByRole("button", { name: "보통" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "힘껏" }));
+    await user.click(screen.getByRole("button", { name: "윷 던지기" }));
+    expect(onThrow).toHaveBeenCalledWith("hard");
+
+    await user.click(screen.getByRole("button", { name: "살살" }));
+    await user.click(screen.getByRole("button", { name: "윷 던지기" }));
+    expect(onThrow).toHaveBeenLastCalledWith("soft");
+  });
+
+  it("남의 차례에는 힘을 고를 수 없다", () => {
+    render(
+      <TurnPanel
+        game={createGame()}
+        currentPlayerNickname="민수"
+        isCurrentPlayer={false}
+        onThrow={() => undefined}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "힘껏" })).toBeDisabled();
+  });
+
+  it("연출은 내가 고른 힘이 아니라 서버가 되돌려 준 힘을 따른다", () => {
+    // 각자 제 화면에서 정한 힘으로 굴리면 한 번의 던지기를 저마다 다른 높이로 보게 된다.
+    vi.useFakeTimers();
+    const initial = createGame({
+      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false], power: "normal" as const },
+    });
+    const { rerender } = render(
+      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
+    );
+
+    rerender(
+      <TurnPanel
+        game={{
+          ...initial,
+          lastThrow: { eventId: "event-2", result: "MO", sticks: [true, true, true, true], power: "hard" as const },
+        }}
+        currentPlayerNickname="민수"
+        isCurrentPlayer
+        onThrow={() => undefined}
+      />,
+    );
+
+    // 힘껏 던진 연출은 보통보다 길다. 그 길이만큼 결과 글자도 늦게 나온다.
+    act(() => vi.advanceTimersByTime(settleMsFor("event-2", "normal")));
+    expect(screen.queryByText("던진 결과: 모")).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(settleMsFor("event-2", "hard")));
+    expect(screen.getByText("던진 결과: 모")).toBeInTheDocument();
+  });
+
   it("holds the result back until the sticks have landed", () => {
     // 결과를 먼저 글자로 알려 주면 굴러가는 윷을 볼 까닭이 없어진다.
     vi.useFakeTimers();
     const initial = createGame({
-      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
+      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false], power: "normal" as const },
     });
     const { rerender } = render(
       <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
@@ -129,7 +194,7 @@ describe("TurnPanel", () => {
 
     rerender(
       <TurnPanel
-        game={{ ...initial, lastThrow: { eventId: "event-2", result: "MO", sticks: [true, true, true, true] } }}
+        game={{ ...initial, lastThrow: { eventId: "event-2", result: "MO", sticks: [true, true, true, true], power: "normal" as const } }}
         currentPlayerNickname="민수"
         isCurrentPlayer
         onThrow={() => undefined}
@@ -154,7 +219,7 @@ describe("TurnPanel", () => {
       removeEventListener: () => undefined,
     }));
     const initial = createGame({
-      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
+      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false], power: "normal" as const },
     });
     const { rerender } = render(
       <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
@@ -162,7 +227,7 @@ describe("TurnPanel", () => {
 
     rerender(
       <TurnPanel
-        game={{ ...initial, lastThrow: { eventId: "event-2", result: "MO", sticks: [true, true, true, true] } }}
+        game={{ ...initial, lastThrow: { eventId: "event-2", result: "MO", sticks: [true, true, true, true], power: "normal" as const } }}
         currentPlayerNickname="민수"
         isCurrentPlayer
         onThrow={() => undefined}
@@ -176,7 +241,7 @@ describe("TurnPanel", () => {
   it("animates sticks only when the authoritative throw event id changes", () => {
     const initial = createGame({
       turnStage: "AWAITING_PIECE",
-      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
+      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false], power: "normal" as const },
     });
     const { rerender } = render(
       <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
@@ -197,7 +262,7 @@ describe("TurnPanel", () => {
       <TurnPanel
         game={{
           ...initial,
-          lastThrow: { eventId: "event-3", result: "DO", sticks: [true, false, false, false] },
+          lastThrow: { eventId: "event-3", result: "DO", sticks: [true, false, false, false], power: "normal" as const },
         }}
         currentPlayerNickname="민수"
         isCurrentPlayer
@@ -211,7 +276,7 @@ describe("TurnPanel", () => {
     vi.useFakeTimers();
     const initial = createGame({
       turnStage: "AWAITING_PIECE",
-      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false] },
+      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false], power: "normal" as const },
     });
     const { rerender } = render(
       <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
@@ -221,7 +286,7 @@ describe("TurnPanel", () => {
       <TurnPanel
         game={{
           ...initial,
-          lastThrow: { eventId: "event-2", result: "DO", sticks: [true, false, false, false] },
+          lastThrow: { eventId: "event-2", result: "DO", sticks: [true, false, false, false], power: "normal" as const },
         }}
         currentPlayerNickname="민수"
         isCurrentPlayer
@@ -236,7 +301,7 @@ describe("TurnPanel", () => {
       <TurnPanel
         game={{
           ...initial,
-          lastThrow: { eventId: "event-3", result: "DO", sticks: [true, false, false, false] },
+          lastThrow: { eventId: "event-3", result: "DO", sticks: [true, false, false, false], power: "normal" as const },
         }}
         currentPlayerNickname="민수"
         isCurrentPlayer
@@ -321,6 +386,7 @@ describe("TurnPanel", () => {
 
     expect(sendCommand).toHaveBeenCalledWith({
       type: "THROW_YUT",
+      power: "normal",
       roomVersion: 21,
       requestId: "00000000-0000-4000-8000-000000000003",
     });

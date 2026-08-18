@@ -91,6 +91,20 @@ export interface TossStyle {
  * lift와 drift는 기준 높이·기준 폭에 곱하는 배수다. 1 언저리를 벗어나면
  * 윷가락이 화면 밖으로 날아가 그림자만 남는다. 다양함은 높이보다 굴림·시차·흩어짐에서 낸다.
  */
+/**
+ * 던지는 힘. 던지는 사람이 고르고, 서버가 되돌려 준 값으로 모두가 같은 높이를 본다.
+ * 힘은 보기만 바꾼다. 무엇이 나올지에는 아무 영향이 없다.
+ */
+export type ThrowPower = "soft" | "normal" | "hard";
+
+const POWER_LIFT: Readonly<Record<ThrowPower, number>> = { soft: 0.68, normal: 1, hard: 1.3 };
+const POWER_SPAN: Readonly<Record<ThrowPower, number>> = { soft: 0.9, normal: 1, hard: 1.12 };
+
+/** 그 힘이 높이를 몇 배로 만드는지. */
+export function liftScaleOf(power: ThrowPower): number {
+  return POWER_LIFT[power];
+}
+
 export const TOSS_STYLES: readonly TossStyle[] = Object.freeze([
   // 높이 띄워 천천히 떨어뜨린다. 구르는 바퀴는 적어 한 장 한 장이 또렷하다.
   { id: "높이", tossMs: 980, staggerMs: 70, lift: 1.2, bounce: 0.1, minTurns: 2, turnSpread: 1, yawTurns: 0, drift: 0.35, wobble: 0.18, spread: 0.22, order: "앞부터" },
@@ -168,7 +182,11 @@ function landingOrder(order: TossStyle["order"], index: number, count: number): 
 }
 
 /** 같은 던지기는 언제 다시 그려도 같은 자리에 흩어지도록 결과 id로 난수를 고정한다. */
-export function layoutFor(throwKey: string, count: number): StickLayout[] {
+export function layoutFor(
+  throwKey: string,
+  count: number,
+  power: ThrowPower = "normal",
+): StickLayout[] {
   const random = mulberry32(hash32(throwKey));
   const style = styleFor(throwKey);
   const offset = ((count - 1) * ROW_GAP) / 2;
@@ -181,9 +199,10 @@ export function layoutFor(throwKey: string, count: number): StickLayout[] {
       yaw: (random() - 0.5) * (0.17 + style.spread),
       turns: style.minTurns + Math.floor(random() * (style.turnSpread + 1)),
       drift: side * style.drift * (0.6 + random() * 0.8),
-      delayMs: landingOrder(style.order, index, count) * style.staggerMs,
-      tossMs: style.tossMs,
-      lift: style.lift * (0.88 + random() * 0.24),
+      // 힘은 높이와 나는 시간만 건드린다. 흩어지는 자리와 구르는 바퀴는 그 던지기의 것이다.
+      delayMs: Math.round(landingOrder(style.order, index, count) * style.staggerMs * POWER_SPAN[power]),
+      tossMs: Math.round(style.tossMs * POWER_SPAN[power]),
+      lift: style.lift * (0.88 + random() * 0.24) * POWER_LIFT[power],
       bounce: style.bounce,
       yawTurns: style.yawTurns,
       wobble: style.wobble,
@@ -196,9 +215,9 @@ export function settleMsOf(layout: readonly StickLayout[]): number {
   return layout.reduce((latest, spot) => Math.max(latest, spot.delayMs + spot.tossMs), 0);
 }
 
-/** 던지기 id만 알면 연출 길이를 얻는다. 결과 글자를 언제 내보일지 정하는 데 쓴다. */
-export function settleMsFor(throwKey: string): number {
-  return settleMsOf(layoutFor(throwKey, STICK_COUNT));
+/** 던지기 id와 힘만 알면 연출 길이를 얻는다. 결과 글자를 언제 내보일지 정하는 데 쓴다. */
+export function settleMsFor(throwKey: string, power: ThrowPower = "normal"): number {
+  return settleMsOf(layoutFor(throwKey, STICK_COUNT, power));
 }
 
 export interface StickGeometry {
