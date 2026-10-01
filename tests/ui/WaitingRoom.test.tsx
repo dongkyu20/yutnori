@@ -281,4 +281,32 @@ describe("WaitingRoom", () => {
     expect(screen.getByText("방장이 게임을 시작하기를 기다리는 중입니다.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "게임 시작" })).not.toBeInTheDocument();
   });
+
+  const fourTeamPlayers = ["host", "p2", "p3", "p4"].map((id) => ({
+    id, nickname: id.toUpperCase(), connected: true, ready: false,
+  }));
+
+  it("lets only the host shuffle teams and sends the command", async () => {
+    const user = userEvent.setup();
+    const { commands } = renderWaitingRoom(createSnapshot({ mode: "team", players: fourTeamPlayers }));
+
+    await user.click(screen.getByRole("button", { name: "팀 랜덤 배정" }));
+
+    expect(commands).toEqual([{ type: "SHUFFLE_TEAMS", roomVersion: 7, requestId: expect.any(String) }]);
+  });
+
+  it("hides the shuffle from members and locks it for counts that cannot pair up", () => {
+    renderWaitingRoom(createSnapshot({ mode: "team", players: fourTeamPlayers }), "p2");
+    expect(screen.queryByRole("button", { name: "팀 랜덤 배정" })).not.toBeInTheDocument();
+    cleanup();
+
+    renderWaitingRoom(createSnapshot({ mode: "team", players: fourTeamPlayers.slice(0, 3) }));
+    expect(screen.getByRole("button", { name: "팀 랜덤 배정" })).toBeDisabled();
+    expect(screen.getByText("4·6·8명일 때 랜덤으로 나눌 수 있어요")).toBeInTheDocument();
+  });
+
+  it("offers no shuffle in an individual room", () => {
+    renderWaitingRoom();
+    expect(screen.queryByRole("button", { name: "팀 랜덤 배정" })).not.toBeInTheDocument();
+  });
 });

@@ -19,6 +19,9 @@ interface WaitingRoomProps {
 
 const TEAM_IDS: TeamId[] = ["A", "B", "C", "D"];
 
+/** 두 명씩 남김없이 짝지을 수 있는 인원. 서버 규칙과 같다. */
+const SHUFFLE_SIZES = [4, 6, 8];
+
 const NOOP = (): void => undefined;
 
 type CopyKind = "link" | "code";
@@ -50,6 +53,7 @@ export function WaitingRoom({
   ])) as Record<TeamId, number>;
 
   const metadata = () => ({ roomVersion: snapshot.version, requestId: newRequestId() });
+  const canShuffle = SHUFFLE_SIZES.includes(snapshot.players.length);
 
   const copy = async (kind: CopyKind): Promise<void> => {
     try {
@@ -104,6 +108,21 @@ export function WaitingRoom({
       </header>
 
       <RoomAlert error={error} />
+
+      {snapshot.mode === "team" && isHost && (
+        <div className="waiting-room__shuffle">
+          <button
+            className="waiting-room__action waiting-room__action--secondary"
+            type="button"
+            disabled={!canShuffle}
+            aria-describedby={canShuffle ? undefined : "shuffle-help"}
+            onClick={() => sendCommand({ type: "SHUFFLE_TEAMS", ...metadata() })}
+          >
+            팀 랜덤 배정
+          </button>
+          {!canShuffle && <p id="shuffle-help" className="waiting-room__hint">4·6·8명일 때 랜덤으로 나눌 수 있어요</p>}
+        </div>
+      )}
 
       {snapshot.mode === "individual" ? renderPlayers(snapshot.players) : (
         <section className="waiting-room__teams" aria-label="팀 구성">

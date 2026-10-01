@@ -237,6 +237,10 @@ button, input, select, textarea { min-height: 44px; }
 .waiting-room__hero p.waiting-room__code { margin: .25rem 0 0; color: var(--ink); font-weight: 800; }
 .waiting-room__code strong { margin-left: .4rem; color: var(--vermilion); font-size: clamp(1.6rem, 4vw, 2.4rem); letter-spacing: .2em; vertical-align: middle; }
 .waiting-room__action--secondary { background: var(--paper); color: var(--ink); }
+.waiting-room__shuffle { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.waiting-room__shuffle .waiting-room__action { width: auto; }
+.waiting-room__shuffle .waiting-room__action:disabled { opacity: .55; cursor: not-allowed; }
+.waiting-room__shuffle p { margin: 0; }
 /* 참가자 카드를 가로로 늘어놓는다. 내 카드에만 준비와 색 고르기가 붙는다. */
 .waiting-room > .player-rail,
 .waiting-room__team-card .player-rail { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .75rem; margin: 0; padding: 0; list-style: none; }
