@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { GameMode, ServerError } from "../../shared/protocol";
 import { nicknameSchema, roomCodeSchema } from "../../shared/schemas";
 import { clearInviteCode, readInviteCode, readSavedNickname, saveNickname } from "../invite";
@@ -13,6 +13,9 @@ export interface LobbySessionApi {
   joinRoom: (nickname: string, roomCode: string) => void | Promise<void>;
 }
 
+/** 주소와 저장된 닉네임은 로비가 떠 있는 동안 바뀌지 않으므로 구독할 것이 없다. */
+const subscribeNever = (): (() => void) => () => undefined;
+
 interface LobbyProps {
   session: LobbySessionApi;
   /** 초대받은 방 코드. 주지 않으면 주소의 `?room=`에서 읽는다. */
@@ -22,10 +25,15 @@ interface LobbyProps {
 export function Lobby({ session, inviteCode: inviteProp }: LobbyProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const nicknameRef = useRef<HTMLInputElement>(null);
-  // 주소와 저장된 닉네임은 브라우저에만 있다. 처음 그릴 때 읽으면 서버가 그린 HTML과 어긋나므로
-  // 붙은 뒤에 읽는다.
-  const [inviteCode, setInviteCode] = useState<string | null>(inviteProp ?? null);
-  const [nickname, setNickname] = useState("");
+  // 주소와 저장된 닉네임은 브라우저에만 있다. 서버가 그린 HTML과 어긋나지 않도록
+  // 서버에서는 빈 값으로 그리고, 붙은 뒤 브라우저 값으로 다시 그린다.
+  const urlInvite = useSyncExternalStore(subscribeNever, () => readInviteCode(), () => null);
+  const savedNickname = useSyncExternalStore(subscribeNever, readSavedNickname, () => "");
+  const [inviteDismissed, setInviteDismissed] = useState(false);
+  // 손대기 전에는 저장된 닉네임을 보여 준다.
+  const [typedNickname, setNickname] = useState<string | null>(null);
+  const nickname = typedNickname ?? savedNickname;
+  const inviteCode = inviteDismissed ? null : (inviteProp === undefined ? urlInvite : inviteProp);
   const [roomCode, setRoomCode] = useState("");
   const [mode, setMode] = useState<GameMode>("individual");
   const [nicknameError, setNicknameError] = useState<string | null>(null);
@@ -39,11 +47,6 @@ export function Lobby({ session, inviteCode: inviteProp }: LobbyProps) {
 
   useEffect(() => {
     headingRef.current?.focus();
-    const saved = readSavedNickname();
-    if (saved) setNickname((current) => current || saved);
-    if (inviteProp === undefined) setInviteCode(readInviteCode());
-    // 붙을 때 한 번만 읽는다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 초대받아 온 사람은 닉네임만 쓰면 되므로 곧장 그 칸으로 보낸다.
@@ -135,7 +138,7 @@ export function Lobby({ session, inviteCode: inviteProp }: LobbyProps) {
             className="lobby-link"
             type="button"
             onClick={() => {
-              setInviteCode(null);
+              setInviteDismissed(true);
               clearInviteCode();
             }}
           >
