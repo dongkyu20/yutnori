@@ -7,6 +7,8 @@ export type ClientCommand =
   | { type: "JOIN_ROOM"; nickname: string; roomCode: string }
   | { type: "SET_READY"; ready: boolean; roomVersion: number; requestId: string }
   | { type: "ASSIGN_TEAM"; playerId: string; teamId: TeamId; roomVersion: number; requestId: string }
+  /** 방장이 참가자를 섞어 두 명씩 A팀부터 나눈다. 4·6·8명일 때만 된다. */
+  | { type: "SHUFFLE_TEAMS"; roomVersion: number; requestId: string }
   /** 내 말 색을 고른다. 팀전에서는 팀에 먼저 들어온 사람이 팀 색을 정한다. */
   | { type: "CHOOSE_COLOR"; slot: number; roomVersion: number; requestId: string }
   | { type: "KICK_PLAYER"; playerId: string; roomVersion: number; requestId: string }

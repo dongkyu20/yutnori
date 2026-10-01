@@ -40,4 +40,10 @@ describe("guest inputs", () => {
       requestId: "00000000-0000-4000-8000-000000000001",
     }).success).toBe(false);
   });
+
+  it("accepts a team shuffle and rejects extra fields on it", () => {
+    const base = { type: "SHUFFLE_TEAMS", roomVersion: 3, requestId: "00000000-0000-4000-8000-000000000002" };
+    expect(parseClientCommand(base).success).toBe(true);
+    expect(parseClientCommand({ ...base, seed: 1 }).success).toBe(false);
+  });
 });

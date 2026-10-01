@@ -31,6 +31,7 @@ const ROOM_ERROR_MESSAGES = {
   COLOR_TAKEN: "이미 다른 참가자가 고른 색입니다.",
   TEAM_LEADER_ONLY: "팀에 먼저 들어온 참가자만 팀 색을 고를 수 있습니다.",
   NO_TEAM: "팀을 먼저 배정받아야 색을 고를 수 있습니다.",
+  INVALID_TEAM_SIZE: "4·6·8명일 때만 팀을 랜덤으로 나눌 수 있습니다.",
 } as const;
 
 /** 고를 수 있는 말 색의 개수. 클라이언트 팔레트와 같아야 한다. */
@@ -337,6 +338,13 @@ export class RoomService {
         // 옮기고 나서 빈 팀이 생겼으면 그 팀이 쥐고 있던 색을 놓아준다.
         this.releaseOrphanedColors(room);
         return;
+      case "SHUFFLE_TEAMS":
+        this.assertWaiting(room);
+        this.assertHost(room, actor.id);
+        this.shuffleTeams(room);
+        // 섞은 뒤 빈 팀이 생겼으면 그 팀이 쥐고 있던 색을 놓아준다.
+        this.releaseOrphanedColors(room);
+        return;
       case "LEAVE_ROOM":
         // 어느 단계에서든 나갈 수 있다. 진행 중이면 판에서도 빠진다.
         this.leaveRoom(room, actor);
@@ -426,6 +434,27 @@ export class RoomService {
     }
     player.teamId = teamId;
     player.ready = false;
+  }
+
+  /** 참가자를 섞어 두 명씩 A팀부터 채운다. 팀이 바뀐 사람만 다시 준비해야 한다. */
+  private shuffleTeams(room: Room): void {
+    if (room.mode !== "team") {
+      throw new RoomError("WRONG_MODE", "팀전에서만 팀을 배정할 수 있습니다.");
+    }
+    if (![4, 6, 8].includes(room.players.length)) {
+      throw new RoomError("INVALID_TEAM_SIZE", ROOM_ERROR_MESSAGES.INVALID_TEAM_SIZE);
+    }
+    const order = [...room.players];
+    for (let i = order.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(this.options.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const teams: TeamId[] = ["A", "B", "C", "D"];
+    order.forEach((player, index) => {
+      const teamId = teams[Math.floor(index / 2)];
+      if (player.teamId !== teamId) player.ready = false;
+      player.teamId = teamId;
+    });
   }
 
   private kickPlayer(room: Room, actorId: string, playerId: string): void {

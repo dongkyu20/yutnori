@@ -1147,3 +1147,93 @@ describe("RoomService 방 나가기", () => {
       .toBe(winnerNickname);
   });
 });
+
+describe("team shuffle", () => {
+  const teamSizes = (snapshot: PublicRoomSnapshot) => {
+    const sizes: Record<string, number> = {};
+    for (const player of snapshot.players) {
+      expect(player.teamId).toBeDefined();
+      sizes[player.teamId!] = (sizes[player.teamId!] ?? 0) + 1;
+    }
+    return sizes;
+  };
+
+  it.each([
+    [4, { A: 2, B: 2 }],
+    [6, { A: 2, B: 2, C: 2 }],
+    [8, { A: 2, B: 2, C: 2, D: 2 }],
+  ])("splits %i players into pairs from team A", (count, expected) => {
+    const service = new RoomService(new FakeClock().options(sequenceRandom(7)));
+    const names = ["Host", "Bora", "Chan", "Dami", "Eun", "Fay", "Gyu", "Hana"].slice(0, count);
+    const sessions = createPlayers(service, "team", names);
+    const snapshot = dispatch(service, sessions[0].playerId, sessions.at(-1)!.snapshot, { type: "SHUFFLE_TEAMS" });
+    expect(teamSizes(snapshot)).toEqual(expected);
+  });
+
+  it("gives the same teams for the same random sequence", () => {
+    const run = () => {
+      const service = new RoomService(new FakeClock().options(sequenceRandom(42)));
+      const sessions = createPlayers(service, "team", ["Host", "Bora", "Chan", "Dami"]);
+      const snapshot = dispatch(service, sessions[0].playerId, sessions.at(-1)!.snapshot, { type: "SHUFFLE_TEAMS" });
+      return snapshot.players.map((player) => `${player.nickname}:${player.teamId}`);
+    };
+    expect(run()).toEqual(run());
+  });
+
+  it("refuses odd counts, non-hosts and individual rooms", () => {
+    const service = new RoomService(new FakeClock().options(sequenceRandom(3)));
+    const five = createPlayers(service, "team", ["Host", "Bora", "Chan", "Dami", "Eun"]);
+    expect(roomError(() => dispatch(service, five[0].playerId, five.at(-1)!.snapshot, { type: "SHUFFLE_TEAMS" })).code)
+      .toBe("INVALID_TEAM_SIZE");
+
+    const four = createPlayers(service, "team", ["Host", "Bora", "Chan", "Dami"]);
+    expect(roomError(() => dispatch(service, four[1].playerId, four.at(-1)!.snapshot, { type: "SHUFFLE_TEAMS" })).code)
+      .toBe("HOST_ONLY");
+
+    const solo = createPlayers(service, "individual", ["Host", "Bora"]);
+    expect(roomError(() => dispatch(service, solo[0].playerId, solo.at(-1)!.snapshot, { type: "SHUFFLE_TEAMS" })).code)
+      .toBe("WRONG_MODE");
+  });
+
+  it("clears ready only for players whose team changed", () => {
+    // random이 늘 1에 가까우면 Fisher–Yates가 자리를 바꾸지 않는다: 들어온 순서대로 A,A,B,B.
+    const service = new RoomService(new FakeClock().options(() => 0.999999));
+    const sessions = createPlayers(service, "team", ["Host", "Bora", "Chan", "Dami"]);
+    let snapshot = sessions.at(-1)!.snapshot;
+    const teams = ["A", "A", "B", "C"] as const;
+    sessions.forEach((session, index) => {
+      snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+        type: "ASSIGN_TEAM", playerId: session.playerId, teamId: teams[index],
+      });
+    });
+    for (const session of sessions) {
+      snapshot = dispatch(service, session.playerId, snapshot, { type: "SET_READY", ready: true });
+    }
+
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "SHUFFLE_TEAMS" });
+
+    const byName = Object.fromEntries(snapshot.players.map((player) => [player.nickname, player]));
+    expect(["Host", "Bora", "Chan", "Dami"].map((name) => byName[name].teamId)).toEqual(["A", "A", "B", "B"]);
+    expect(["Host", "Bora", "Chan", "Dami"].map((name) => byName[name].ready)).toEqual([true, true, true, false]);
+  });
+
+  it("releases the colour of a team left empty by the shuffle", () => {
+    const service = new RoomService(new FakeClock().options(() => 0.999999));
+    const sessions = createPlayers(service, "team", ["Host", "Bora", "Chan", "Dami"]);
+    let snapshot = sessions.at(-1)!.snapshot;
+    const teams = ["A", "A", "B", "D"] as const;
+    sessions.forEach((session, index) => {
+      snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+        type: "ASSIGN_TEAM", playerId: session.playerId, teamId: teams[index],
+      });
+    });
+    // D팀에 혼자 있는 Dami가 D팀 색을 고른다.
+    snapshot = dispatch(service, sessions[3].playerId, snapshot, { type: "CHOOSE_COLOR", slot: 3 });
+    expect(snapshot.players.some((player) => player.colorSlot === 3)).toBe(true);
+
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, { type: "SHUFFLE_TEAMS" });
+
+    // D팀이 비었으므로 그 색은 아무도 쥐고 있지 않다.
+    expect(snapshot.players.some((player) => player.colorSlot === 3)).toBe(false);
+  });
+});

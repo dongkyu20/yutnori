@@ -15,6 +15,7 @@ export const clientCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("KICK_PLAYER"), playerId: z.string().uuid(), ...versioned }).strict(),
   z.object({ type: z.literal("LEAVE_ROOM"), ...versioned }).strict(),
   z.object({ type: z.literal("CHOOSE_COLOR"), slot: z.number().int().min(0).max(3), ...versioned }).strict(),
+  z.object({ type: z.literal("SHUFFLE_TEAMS"), ...versioned }).strict(),
   z.object({ type: z.literal("START_GAME"), ...versioned }).strict(),
   z.object({ type: z.literal("PLAY_AGAIN"), ...versioned }).strict(),
   z.object({ type: z.literal("THROW_YUT"), ...versioned }).strict(),
