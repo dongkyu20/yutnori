@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { Lobby, type LobbySessionApi } from "../../client/components/Lobby";
 
-function renderLobby(overrides: Partial<LobbySessionApi> = {}) {
+function renderLobby(overrides: Partial<LobbySessionApi> = {}, inviteCode: string | null = null) {
   const requests: Array<unknown> = [];
   const session: LobbySessionApi = {
     connectionState: "connected",
@@ -18,12 +18,15 @@ function renderLobby(overrides: Partial<LobbySessionApi> = {}) {
     ...overrides,
   };
 
-  render(<Lobby session={session} />);
+  render(<Lobby session={session} inviteCode={inviteCode} />);
   return { requests };
 }
 
 describe("Lobby", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+  });
 
   it("shows a visible nickname error instead of creating a room without a valid guest name", async () => {
     const user = userEvent.setup();
@@ -74,5 +77,48 @@ describe("Lobby", () => {
     expect(screen.getByRole("button", { name: "개인전 방 만들기" })).toBeDisabled();
     expect(requests).toEqual([{ nickname: "Guest", mode: "individual" }]);
     resolveCreate?.();
+  });
+
+  it("joins with the one shared nickname and moves focus to it when it is missing", async () => {
+    const user = userEvent.setup();
+    const { requests } = renderLobby();
+
+    await user.type(screen.getByLabelText("방 코드"), "AB2CDE");
+    await user.click(screen.getByRole("button", { name: "방 참가하기" }));
+
+    expect(screen.getByLabelText("닉네임")).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent("닉네임은 2~12자");
+    expect(requests).toEqual([]);
+  });
+
+  it("opens straight into the invited room and joins with only a nickname", async () => {
+    const user = userEvent.setup();
+    const { requests } = renderLobby({}, "AB2CDE");
+
+    expect(screen.getByText("AB2CDE 방에 초대받았어요")).toBeInTheDocument();
+    expect(screen.queryByLabelText("방 코드")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "개인전 방 만들기" })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("닉네임"), "지우");
+    await user.keyboard("{Enter}");
+    expect(requests).toEqual([{ nickname: "지우", roomCode: "AB2CDE" }]);
+  });
+
+  it("lets an invited player make their own room instead", async () => {
+    const user = userEvent.setup();
+    renderLobby({}, "AB2CDE");
+    await user.click(screen.getByRole("button", { name: "다른 방 만들기" }));
+    expect(screen.getByRole("button", { name: "개인전 방 만들기" })).toBeInTheDocument();
+    expect(screen.getByLabelText("방 코드")).toBeInTheDocument();
+  });
+
+  it("prefills the last nickname and saves the one used", async () => {
+    window.localStorage.setItem("yut.nickname", "민수");
+    const user = userEvent.setup();
+    const { requests } = renderLobby();
+    expect(screen.getByLabelText<HTMLInputElement>("닉네임").value).toBe("민수");
+    await user.click(screen.getByRole("button", { name: "개인전 방 만들기" }));
+    expect(requests).toEqual([{ nickname: "민수", mode: "individual" }]);
+    expect(window.localStorage.getItem("yut.nickname")).toBe("민수");
   });
 });

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameMode, ServerError } from "../../shared/protocol";
 import { nicknameSchema, roomCodeSchema } from "../../shared/schemas";
+import { clearInviteCode, readInviteCode, readSavedNickname, saveNickname } from "../invite";
 import type { ConnectionState } from "../useGameSession";
 
 export interface LobbySessionApi {
@@ -12,9 +13,19 @@ export interface LobbySessionApi {
   joinRoom: (nickname: string, roomCode: string) => void | Promise<void>;
 }
 
-export function Lobby({ session }: { session: LobbySessionApi }) {
+interface LobbyProps {
+  session: LobbySessionApi;
+  /** 초대받은 방 코드. 주지 않으면 주소의 `?room=`에서 읽는다. */
+  inviteCode?: string | null;
+}
+
+export function Lobby({ session, inviteCode: inviteProp }: LobbyProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const [nickname, setNickname] = useState("");
+  const nicknameRef = useRef<HTMLInputElement>(null);
+  const [inviteCode, setInviteCode] = useState<string | null>(() => (
+    inviteProp === undefined ? readInviteCode() : inviteProp
+  ));
+  const [nickname, setNickname] = useState(() => readSavedNickname());
   const [roomCode, setRoomCode] = useState("");
   const [mode, setMode] = useState<GameMode>("individual");
   const [nicknameError, setNicknameError] = useState<string | null>(null);
@@ -24,17 +35,24 @@ export function Lobby({ session }: { session: LobbySessionApi }) {
   const nicknameResult = nicknameSchema.safeParse(nickname);
   const roomCodeResult = roomCodeSchema.safeParse(roomCode);
   const canInteract = session.connectionState === "connected";
+  const invited = inviteCode !== null;
 
+  // 초대받아 온 사람은 닉네임만 쓰면 되므로 곧장 그 칸으로 보낸다.
   useEffect(() => {
-    headingRef.current?.focus();
+    if (invited) nicknameRef.current?.focus();
+    else headingRef.current?.focus();
+    // 처음 열릴 때만 옮긴다. "다른 방 만들기"를 누른 뒤에는 초점을 빼앗지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const validateNickname = (): string | null => {
     if (!nicknameResult.success) {
       setNicknameError("닉네임은 2~12자의 한글 또는 영문으로 입력해 주세요.");
+      nicknameRef.current?.focus();
       return null;
     }
     setNicknameError(null);
+    saveNickname(nicknameResult.data);
     return nicknameResult.data;
   };
 
@@ -50,82 +68,121 @@ export function Lobby({ session }: { session: LobbySessionApi }) {
     }
   };
 
-  const joinRoom = async (): Promise<void> => {
+  const joinRoom = async (code: string | null): Promise<void> => {
     if (!canInteract) return;
     const parsedNickname = validateNickname();
-    const parsedRoomCode = roomCodeResult.success ? roomCodeResult.data : null;
-    setRoomCodeError(parsedRoomCode ? null : "방 코드를 다시 확인해 주세요.");
-    if (submitting || !parsedNickname || !parsedRoomCode) return;
+    setRoomCodeError(code ? null : "방 코드를 다시 확인해 주세요.");
+    if (submitting || !parsedNickname || !code) return;
     setSubmitting(true);
     try {
-      await session.joinRoom(parsedNickname, parsedRoomCode);
+      await session.joinRoom(parsedNickname, code);
     } finally {
       setSubmitting(false);
     }
   };
 
+  const nicknameField = (
+    <div className="lobby-identity__field">
+      <label className="lobby-field" htmlFor="nickname">닉네임</label>
+      <input
+        id="nickname"
+        ref={nicknameRef}
+        className="lobby-input lobby-input--nickname"
+        value={nickname}
+        onChange={(event) => {
+          setNickname(event.target.value);
+          setNicknameError(null);
+        }}
+        aria-describedby={nicknameError ? "nickname-help nickname-error" : "nickname-help"}
+        aria-invalid={nicknameError ? true : undefined}
+        autoComplete="nickname"
+        placeholder="친구들에게 보일 이름"
+      />
+      <p className="lobby-help" id="nickname-help">한글 또는 영문 2~12자</p>
+      {nicknameError && <p className="lobby-help lobby-help--error" id="nickname-error" role="alert">{nicknameError}</p>}
+    </div>
+  );
+
   return (
-    <main className="lobby">
+    <main className={`lobby${invited ? " lobby--invited" : ""}`}>
       <header className="lobby__hero">
         <p>한판윷</p>
+        {invited && <p className="lobby__invite-note">{inviteCode} 방에 초대받았어요</p>}
         <h1 ref={headingRef} tabIndex={-1}>같이 던지고, 함께 웃는 한판</h1>
-        <p>이름만 정하면 바로 친구들과 윷놀이를 시작할 수 있어요.</p>
+        <p>{invited ? "닉네임만 정하면 바로 들어갈 수 있어요." : "닉네임을 정하고, 방을 만들거나 친구의 방 코드로 들어오세요."}</p>
       </header>
 
       {session.error && <p className="lobby__alert" role="alert">{session.error.message}</p>}
 
-      <section className="lobby-card" aria-labelledby="create-room-heading">
-        <h2 id="create-room-heading">새 방 만들기</h2>
-        <label className="lobby-field" htmlFor="nickname">닉네임</label>
-        <input
-          id="nickname"
-          className="lobby-input"
-          value={nickname}
-          onChange={(event) => {
-            setNickname(event.target.value);
-            setNicknameError(null);
-          }}
-          aria-describedby={nicknameError ? "nickname-error" : undefined}
-          autoComplete="nickname"
-        />
-        {nicknameError && <p className="lobby-help lobby-help--error" id="nickname-error" role="alert">{nicknameError}</p>}
-
-        <div className="lobby-mode" role="group" aria-label="게임 방식">
-          <button className="lobby-mode__button" type="button" aria-pressed={mode === "individual"} onClick={() => setMode("individual")} disabled={!canInteract || submitting}>
-            2–4명 개인전
-          </button>
-          <button className="lobby-mode__button" type="button" aria-pressed={mode === "team"} onClick={() => setMode("team")} disabled={!canInteract || submitting}>
-            4·6·8명 팀 대항전
-          </button>
-        </div>
-        <button className="lobby-action" type="button" onClick={() => void createRoom()} disabled={!canInteract || submitting}>
-          {mode === "individual" ? "개인전 방 만들기" : "팀 대항전 방 만들기"}
-        </button>
-      </section>
-
-      <section className="lobby-card" aria-labelledby="join-room-heading">
-        <h2 id="join-room-heading">친구의 방에 참가하기</h2>
-        <form className="lobby-form" onSubmit={(event) => {
-          event.preventDefault();
-          void joinRoom();
-        }}>
-          <label className="lobby-field" htmlFor="room-code">방 코드</label>
-          <input
-            id="room-code"
-            className="lobby-input"
-            value={roomCode}
-            onChange={(event) => {
-              setRoomCode(event.target.value.toUpperCase());
-              setRoomCodeError(null);
+      {invited ? (
+        <section className="lobby-card lobby-card--invite" aria-labelledby="invite-heading">
+          <h2 id="invite-heading">초대받은 방</h2>
+          <p className="lobby-invite__code">{inviteCode}</p>
+          <form className="lobby-form" onSubmit={(event) => {
+            event.preventDefault();
+            void joinRoom(inviteCode);
+          }}>
+            {nicknameField}
+            <button className="lobby-action" type="submit" disabled={!canInteract || submitting}>방 참가하기</button>
+          </form>
+          <button
+            className="lobby-link"
+            type="button"
+            onClick={() => {
+              setInviteCode(null);
+              clearInviteCode();
             }}
-            aria-describedby={roomCodeError ? "room-code-error" : undefined}
-            autoCapitalize="characters"
-            maxLength={6}
-          />
-          {roomCodeError && <p className="lobby-help lobby-help--error" id="room-code-error" role="alert">{roomCodeError}</p>}
-          <button className="lobby-action" type="submit" disabled={!canInteract || submitting}>방 참가하기</button>
-        </form>
-      </section>
+          >
+            다른 방 만들기
+          </button>
+        </section>
+      ) : (
+        <>
+          <section className="lobby-identity" aria-label="내 정보">{nicknameField}</section>
+
+          <div className="lobby-paths">
+            <section className="lobby-card" aria-labelledby="create-room-heading">
+              <h2 id="create-room-heading">새 방 만들기</h2>
+              <div className="lobby-mode" role="group" aria-label="게임 방식">
+                <button className="lobby-mode__button" type="button" aria-pressed={mode === "individual"} onClick={() => setMode("individual")} disabled={!canInteract || submitting}>
+                  2–4명 개인전
+                </button>
+                <button className="lobby-mode__button" type="button" aria-pressed={mode === "team"} onClick={() => setMode("team")} disabled={!canInteract || submitting}>
+                  4·6·8명 팀 대항전
+                </button>
+              </div>
+              <button className="lobby-action" type="button" onClick={() => void createRoom()} disabled={!canInteract || submitting}>
+                {mode === "individual" ? "개인전 방 만들기" : "팀 대항전 방 만들기"}
+              </button>
+            </section>
+
+            <section className="lobby-card" aria-labelledby="join-room-heading">
+              <h2 id="join-room-heading">코드로 참가하기</h2>
+              <form className="lobby-form" onSubmit={(event) => {
+                event.preventDefault();
+                void joinRoom(roomCodeResult.success ? roomCodeResult.data : null);
+              }}>
+                <label className="lobby-field" htmlFor="room-code">방 코드</label>
+                <input
+                  id="room-code"
+                  className="lobby-input lobby-input--code"
+                  value={roomCode}
+                  onChange={(event) => {
+                    setRoomCode(event.target.value.toUpperCase());
+                    setRoomCodeError(null);
+                  }}
+                  aria-describedby={roomCodeError ? "room-code-error" : undefined}
+                  autoCapitalize="characters"
+                  maxLength={6}
+                  placeholder="6자리"
+                />
+                {roomCodeError && <p className="lobby-help lobby-help--error" id="room-code-error" role="alert">{roomCodeError}</p>}
+                <button className="lobby-action" type="submit" disabled={!canInteract || submitting}>방 참가하기</button>
+              </form>
+            </section>
+          </div>
+        </>
+      )}
 
       <aside className="lobby-card lobby-card--note" aria-label="간단한 게임 규칙">
         <h2>게임 방법</h2>

@@ -41,13 +41,15 @@ button, input, select, textarea { min-height: 44px; }
 
 .lobby {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(18rem, .8fr);
-  gap: clamp(1rem, 2vw, 2rem);
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 60rem;
+  gap: clamp(1rem, 2vw, 1.5rem);
+  align-content: start;
 }
 
 .lobby__hero,
 .waiting-room__hero,
+.lobby-identity,
 .lobby-card,
 .waiting-room__footer,
 .waiting-room__team-card {
@@ -59,6 +61,7 @@ button, input, select, textarea { min-height: 44px; }
 
 .lobby__hero,
 .waiting-room__hero,
+.lobby-identity,
 .lobby-card,
 .waiting-room__footer,
 .waiting-room__team-card {
@@ -164,6 +167,22 @@ button, input, select, textarea { min-height: 44px; }
   color: #fff;
 }
 
+/* 닉네임은 만들기와 참가가 함께 쓰므로 두 갈래 위에 한 번만 둔다. */
+.lobby-identity__field { display: grid; gap: .4rem; }
+.lobby-input--nickname { font-size: 1.15rem; }
+.lobby-input--code { font-size: 1.15rem; font-weight: 800; letter-spacing: .3em; text-transform: uppercase; }
+.lobby-identity .lobby-help, .lobby-card--invite .lobby-help { margin: 0; font-size: .85rem; }
+.lobby-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(1rem, 2vw, 1.5rem); }
+.lobby-paths .lobby-card { align-content: start; }
+.lobby-paths .lobby-card > .lobby-action, .lobby-paths .lobby-form { margin-top: auto; }
+.lobby-mode__button { white-space: nowrap; font-size: clamp(.82rem, 2.4vw, 1rem); padding-inline: .5rem; }
+.lobby__invite-note { margin: .25rem 0 .5rem; display: inline-block; border-radius: 999px; background: var(--gold); color: var(--ink); padding: .25rem .8rem; font-weight: 900; }
+.lobby-card--invite { border-color: var(--gold); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 35%, transparent), 0 10px 26px rgb(31 39 36 / 10%); }
+.lobby-card .lobby-invite__code { margin: 0; color: var(--vermilion); font-size: clamp(1.8rem, 5vw, 2.4rem); font-weight: 900; letter-spacing: .25em; }
+.lobby-link { justify-self: start; border: 0; background: none; padding: .25rem 0; color: var(--jade); font-weight: 800; text-decoration: underline; cursor: pointer; }
+.lobby-card--note { font-size: .9rem; box-shadow: none; background: transparent; }
+.lobby-card--note h2 { font-size: .95rem; }
+
 .lobby-help--error,
 .waiting-room__status--error,
 .lobby__alert {
@@ -215,8 +234,11 @@ button, input, select, textarea { min-height: 44px; }
   max-width: 32rem;
 }
 
+@media (max-width: 760px) {
+  .lobby-paths { grid-template-columns: minmax(0, 1fr); }
+}
+
 @media (max-width: 920px) {
-  .lobby,
   .waiting-room__teams {
     grid-template-columns: minmax(0, 1fr);
   }
