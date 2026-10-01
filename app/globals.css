@@ -83,6 +83,9 @@ button, input, select, textarea { min-height: 44px; }
   text-transform: uppercase;
 }
 
+/* 화면이 바뀔 때 제목으로 옮기는 초점은 스크린 리더용이다. 테두리까지 그릴 까닭은 없다. */
+.lobby__hero h1:focus { outline: none; box-shadow: none; }
+
 .lobby__hero h1,
 .waiting-room__hero h1 {
   margin: 0;
@@ -316,13 +319,14 @@ button, input, select, textarea { min-height: 44px; }
 /* 대기실 참가자 목록 — 준비 버튼을 실제 버튼처럼 보이게 한다. */
 .player-rail { display: grid; gap: .7rem; margin: .85rem 0 0; padding: 0; list-style: none; }
 .player-rail__item {
+  align-content: start;
   display: grid; gap: .55rem;
   border: 2px solid var(--ink); border-radius: .7rem;
   background: var(--paper); padding: .85rem;
 }
 .player-rail__identity { display: flex; align-items: baseline; gap: .4rem; }
 .player-rail__name { font-size: 1.05rem; }
-.player-rail__status { display: flex; flex-wrap: wrap; gap: .4rem; }
+.player-rail__status { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .player-rail__badge { border-radius: 999px; padding: .18rem .6rem; font-size: .76rem; font-weight: 800; background: color-mix(in srgb, var(--ink) 8%, var(--paper)); }
 .player-rail__badge--host { background: color-mix(in srgb, var(--gold) 34%, var(--paper)); }
 .player-rail__badge--offline { background: color-mix(in srgb, var(--vermilion) 20%, var(--paper)); color: var(--vermilion); }
@@ -451,7 +455,7 @@ button, input, select, textarea { min-height: 44px; }
 .turn-panel > p.turn-panel__current { margin-top: -.6rem; color: var(--muted-ink); font-size: .85rem; }
 
 /* 윷 결과: 윷가락이 3D로 구르는 무대 */
-.yut-result { display: grid; gap: .85rem; justify-items: center; border-radius: .85rem; background: color-mix(in srgb, var(--ink) 5%, var(--paper)); padding: 1.15rem 1rem 1.5rem; }
+.yut-result { display: grid; gap: .85rem; justify-items: center; border-radius: .85rem; background: color-mix(in srgb, var(--ink) 5%, var(--paper)); padding: 1rem .25rem 1.25rem; }
 .yut-result h3 { margin: 0; font-size: .8rem; font-weight: 900; letter-spacing: .14em; color: var(--muted-ink); }
 .yut-result > p { margin: 0; font-size: 1.05rem; font-weight: 800; }
 /* three.js 캔버스가 뜨면 CSS 윷은 화면에서 감추되 스크린 리더에는 남긴다. */
@@ -562,7 +566,7 @@ button, input, select, textarea { min-height: 44px; }
 
 .emoji-reactions { position: relative; display: grid; gap: .5rem; }
 .emoji-reactions__buttons { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: .5rem; }
-.emoji-reactions__buttons button { min-width: 44px; border: 2px solid var(--ink); border-radius: 999px; background: var(--paper); font-size: 1.35rem; cursor: pointer; }
+.emoji-reactions__buttons button { min-width: 44px; min-height: 2.6rem; border: 2px solid var(--ink); border-radius: 999px; background: var(--paper); font-size: 1.35rem; cursor: pointer; }
 .emoji-reactions__buttons button:disabled { opacity: .55; cursor: wait; }
 .emoji-reactions__stream { position: absolute; left: 50%; bottom: calc(100% + .4rem); display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; width: 100%; transform: translateX(-50%); pointer-events: none; }
 .emoji-reactions__stream span { border: 2px solid var(--ink); border-radius: 999px; background: var(--paper); padding: .35rem .65rem; box-shadow: 0 6px 18px rgb(31 39 36 / 18%); animation: reaction-rise 2s ease-out both; font-weight: 800; }

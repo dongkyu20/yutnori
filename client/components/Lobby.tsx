@@ -22,10 +22,10 @@ interface LobbyProps {
 export function Lobby({ session, inviteCode: inviteProp }: LobbyProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const nicknameRef = useRef<HTMLInputElement>(null);
-  const [inviteCode, setInviteCode] = useState<string | null>(() => (
-    inviteProp === undefined ? readInviteCode() : inviteProp
-  ));
-  const [nickname, setNickname] = useState(() => readSavedNickname());
+  // 주소와 저장된 닉네임은 브라우저에만 있다. 처음 그릴 때 읽으면 서버가 그린 HTML과 어긋나므로
+  // 붙은 뒤에 읽는다.
+  const [inviteCode, setInviteCode] = useState<string | null>(inviteProp ?? null);
+  const [nickname, setNickname] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [mode, setMode] = useState<GameMode>("individual");
   const [nicknameError, setNicknameError] = useState<string | null>(null);
@@ -37,13 +37,19 @@ export function Lobby({ session, inviteCode: inviteProp }: LobbyProps) {
   const canInteract = session.connectionState === "connected";
   const invited = inviteCode !== null;
 
+  useEffect(() => {
+    headingRef.current?.focus();
+    const saved = readSavedNickname();
+    if (saved) setNickname((current) => current || saved);
+    if (inviteProp === undefined) setInviteCode(readInviteCode());
+    // 붙을 때 한 번만 읽는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 초대받아 온 사람은 닉네임만 쓰면 되므로 곧장 그 칸으로 보낸다.
   useEffect(() => {
     if (invited) nicknameRef.current?.focus();
-    else headingRef.current?.focus();
-    // 처음 열릴 때만 옮긴다. "다른 방 만들기"를 누른 뒤에는 초점을 빼앗지 않는다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [invited]);
 
   const validateNickname = (): string | null => {
     if (!nicknameResult.success) {
