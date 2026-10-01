@@ -263,4 +263,22 @@ describe("WaitingRoom", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("방 코드를 직접 복사해주세요.");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
+
+  it("copies an invite link that opens this room", async () => {
+    const user = userEvent.setup();
+    renderWaitingRoom();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    await user.click(screen.getByRole("button", { name: "초대 링크 복사" }));
+
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}${window.location.pathname}?room=AB2CDE`);
+    expect(screen.getByRole("status")).toHaveTextContent("초대 링크가 복사되었습니다");
+  });
+
+  it("tells a member who is not the host that the host starts the game", () => {
+    renderWaitingRoom(createSnapshot(), "guest");
+    expect(screen.getByText("방장이 게임을 시작하기를 기다리는 중입니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "게임 시작" })).not.toBeInTheDocument();
+  });
 });

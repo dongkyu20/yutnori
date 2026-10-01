@@ -230,8 +230,21 @@ button, input, select, textarea { min-height: 44px; }
   list-style: none;
 }
 
-.waiting-room__footer {
-  max-width: 32rem;
+.waiting-room { max-width: 64rem; align-content: start; }
+.waiting-room__hero p.waiting-room__code { margin: .25rem 0 0; color: var(--ink); font-weight: 800; }
+.waiting-room__code strong { margin-left: .4rem; color: var(--vermilion); font-size: clamp(1.6rem, 4vw, 2.4rem); letter-spacing: .2em; vertical-align: middle; }
+.waiting-room__action--secondary { background: var(--paper); color: var(--ink); }
+/* 참가자 카드를 가로로 늘어놓는다. 내 카드에만 준비와 색 고르기가 붙는다. */
+.waiting-room > .player-rail,
+.waiting-room__team-card .player-rail { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .75rem; margin: 0; padding: 0; list-style: none; }
+.waiting-room__team-card .player-rail { grid-template-columns: minmax(0, 1fr); }
+.waiting-room__footer { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.waiting-room__footer h2 { grid-column: 1 / -1; }
+.waiting-room__footer .waiting-room__action { width: auto; min-width: 12rem; }
+.waiting-room__footer p { margin: 0; }
+@media (max-width: 760px) {
+  .waiting-room__footer { grid-template-columns: minmax(0, 1fr); }
+  .waiting-room__footer .waiting-room__action { width: 100%; }
 }
 
 @media (max-width: 760px) {

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { InRoomCommand, PublicRoomSnapshot, ServerError, TeamId } from "../../shared/protocol";
+import { inviteUrl } from "../invite";
 import { newRequestId } from "../requestId";
 import { PlayerRail } from "./PlayerRail";
 import { RoomAlert } from "./RoomAlert";
@@ -20,6 +21,17 @@ const TEAM_IDS: TeamId[] = ["A", "B", "C", "D"];
 
 const NOOP = (): void => undefined;
 
+type CopyKind = "link" | "code";
+
+const COPIED_MESSAGES: Record<CopyKind, string> = {
+  link: "초대 링크가 복사되었습니다. 친구에게 보내 주세요.",
+  code: "방 코드가 복사되었습니다.",
+};
+const COPY_FAILED_MESSAGES: Record<CopyKind, string> = {
+  link: "초대 링크를 직접 복사해주세요.",
+  code: "방 코드를 직접 복사해주세요.",
+};
+
 export function WaitingRoom({
   snapshot,
   playerId,
@@ -27,8 +39,9 @@ export function WaitingRoom({
   sendCommand,
   leaveRoom = NOOP,
 }: WaitingRoomProps) {
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState(false);
+  // 무엇을 복사했는지(또는 복사하지 못했는지). 안내 문구가 달라진다.
+  const [copied, setCopied] = useState<CopyKind | null>(null);
+  const [copyError, setCopyError] = useState<CopyKind | null>(null);
   const isHost = playerId === snapshot.hostPlayerId;
   const capacity = snapshot.mode === "individual" ? 4 : 8;
   const teamSizes = Object.fromEntries(TEAM_IDS.map((teamId) => [
@@ -38,15 +51,15 @@ export function WaitingRoom({
 
   const metadata = () => ({ roomVersion: snapshot.version, requestId: newRequestId() });
 
-  const copyRoomCode = async (): Promise<void> => {
+  const copy = async (kind: CopyKind): Promise<void> => {
     try {
       if (!navigator.clipboard) throw new Error("Clipboard API unavailable");
-      await navigator.clipboard.writeText(snapshot.roomCode);
-      setCopied(true);
-      setCopyError(false);
+      await navigator.clipboard.writeText(kind === "link" ? inviteUrl(snapshot.roomCode) : snapshot.roomCode);
+      setCopied(kind);
+      setCopyError(null);
     } catch {
-      setCopied(false);
-      setCopyError(true);
+      setCopied(null);
+      setCopyError(kind);
     }
   };
 
@@ -76,15 +89,18 @@ export function WaitingRoom({
   return (
     <main className="waiting-room" data-room-version={snapshot.version} data-room-phase={snapshot.phase}>
       <header className="waiting-room__hero">
+        <p>한판윷</p>
         <h1>대기실</h1>
+        <p className="waiting-room__code">방 코드 <strong>{snapshot.roomCode}</strong></p>
         <p>참가 인원 {`${snapshot.players.length}/${capacity}`}</p>
-        <p>방 코드: <strong>{snapshot.roomCode}</strong></p>
+        <p className="waiting-room__hint">친구에게 초대 링크를 보내면 닉네임만 쓰고 바로 들어올 수 있어요.</p>
         <div className="waiting-room__hero-actions">
-          <button className="waiting-room__action" type="button" onClick={() => void copyRoomCode()}>방 코드 복사</button>
+          <button className="waiting-room__action" type="button" onClick={() => void copy("link")}>초대 링크 복사</button>
+          <button className="waiting-room__action waiting-room__action--secondary" type="button" onClick={() => void copy("code")}>방 코드 복사</button>
           <button className="room-leave" type="button" onClick={leaveRoom}>방 나가기</button>
         </div>
-        {copied && <p className="waiting-room__status" role="status">방 코드가 복사되었습니다.</p>}
-        {copyError && <p className="waiting-room__status waiting-room__status--error" role="alert">방 코드를 직접 복사해주세요.</p>}
+        {copied && <p className="waiting-room__status" role="status">{COPIED_MESSAGES[copied]}</p>}
+        {copyError && <p className="waiting-room__status waiting-room__status--error" role="alert">{COPY_FAILED_MESSAGES[copyError]}</p>}
       </header>
 
       <RoomAlert error={error} />
@@ -122,7 +138,9 @@ export function WaitingRoom({
           >
             게임 시작
           </button>
-        ) : null}
+        ) : (
+          <p className="waiting-room__waiting">방장이 게임을 시작하기를 기다리는 중입니다.</p>
+        )}
       </section>
     </main>
   );
