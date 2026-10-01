@@ -124,9 +124,13 @@ export function GameScreen({
           <span className={connectionState === "connected" ? "sr-only" : undefined}>{CONNECTION_MESSAGES[connectionState]}</span>
         </p>
         <span className="game-bar__spacer" />
-        <button type="button" className="game-bar__invite" aria-label="초대 링크 복사" onClick={() => void copyInvite()}>
-          {copyState === "copied" ? "복사됨" : copyState === "failed" ? "복사 실패" : "초대 링크"}
+        <button type="button" className="game-bar__invite" onClick={() => void copyInvite()}>
+          {copyState === "copied" ? "복사됨" : copyState === "failed" ? "복사 실패" : "초대 링크 복사"}
         </button>
+        {/* 버튼 글자가 바뀐 것만으로는 스크린 리더가 알지 못하므로 따로 알린다. */}
+        <span className="sr-only" role="status">
+          {copyState === "copied" ? "초대 링크가 복사되었습니다." : copyState === "failed" ? "초대 링크를 복사하지 못했습니다." : ""}
+        </span>
         <button type="button" className="room-leave" onClick={confirmLeave}>방 나가기</button>
       </header>
       <RoomAlert error={error} />
@@ -150,7 +154,9 @@ export function GameScreen({
               {player.teamId && <span className="game-player__meta">{player.teamId}팀</span>}
               {sideName(slot) && <span className="game-player__meta">{sideName(slot)} 말</span>}
               <span className="game-player__meta">대기 {counts.home} · 완주 {counts.finished}</span>
-              {!player.connected && <span className="game-player__offline">연결 끊김</span>}
+              {player.connected
+                ? <span className="sr-only">연결됨</span>
+                : <span className="game-player__offline">연결 끊김</span>}
               {isTurn && <span className="sr-only">차례</span>}
             </li>
           );

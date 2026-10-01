@@ -294,9 +294,12 @@ export async function performLegalAction(
     if (probe.kind === "finished") return { kind: "finished" };
 
     try {
-      await actionLocator(probe.actor.page, probe.action).click({
-        timeout: Math.min(LEGAL_ACTION_CLICK_TIMEOUT_MS, Math.max(1, deadline - Date.now())),
-      });
+      const clickTimeout = Math.min(LEGAL_ACTION_CLICK_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
+      await actionLocator(probe.actor.page, probe.action).click({ timeout: clickTimeout });
+      // 말을 누르면 고르기만 한다. 판에 뜬 갈 곳을 눌러야 서버에 이동이 간다.
+      if (probe.action === "piece") {
+        await probe.actor.page.locator("button.yut-choice").first().click({ timeout: clickTimeout });
+      }
     } catch (cause) {
       if (await gameFinished(players)) return { kind: "finished" };
       lastClickError = cause instanceof Error ? cause.message.split("\n", 1)[0] : String(cause);

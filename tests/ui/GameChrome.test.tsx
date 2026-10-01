@@ -260,6 +260,8 @@ describe("finished game chrome", () => {
     expect(strip.querySelector(".game-player[aria-current='true'] strong")).toHaveTextContent("민수");
     expect(strip.querySelector("[data-player-id='player-1']")).toHaveTextContent("대기 1 · 완주 1");
     expect(strip.querySelector("[data-player-id='player-2']")).toHaveTextContent("나");
+    // 눈에는 끊긴 사람만 표시하지만, 스크린 리더와 재접속 확인은 "연결됨"을 읽는다.
+    expect(strip.querySelector("[data-player-id='player-1']")).toHaveTextContent("연결됨");
     expect(screen.queryByRole("button", { name: /참가자 패널/ })).not.toBeInTheDocument();
   });
 
@@ -276,10 +278,12 @@ describe("finished game chrome", () => {
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     render(<GameScreen snapshot={gameSnapshot()} playerId="player-1" sendCommand={() => undefined} />);
 
-    await user.click(screen.getByRole("button", { name: "초대 링크 복사" }));
+    const invite = screen.getByRole("button", { name: "초대 링크 복사" });
+    await user.click(invite);
 
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}${window.location.pathname}?room=AB2CDE`);
-    expect(screen.getByRole("button", { name: "초대 링크 복사" })).toHaveTextContent("복사됨");
+    expect(invite).toHaveTextContent("복사됨");
+    expect(screen.getByText("초대 링크가 복사되었습니다.")).toHaveAttribute("role", "status");
     vi.unstubAllGlobals();
   });
 
