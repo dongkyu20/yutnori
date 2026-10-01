@@ -333,7 +333,7 @@ button, input, select, textarea { min-height: 44px; }
 .yut-board__segment { position: absolute; left: var(--segment-x); top: var(--segment-y); width: var(--segment-length); height: 4px; transform: translateY(-50%) rotate(var(--segment-angle)); transform-origin: left center; }
 .yut-board__segment::before { content: ""; position: absolute; inset: 0; background: linear-gradient(to right, var(--ink), #695B49); }
 .yut-board__nodes { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
-.yut-board__node { position: absolute; left: var(--node-x); top: var(--node-y); width: 1.25rem; aspect-ratio: 1; border: 3px solid var(--ink); border-radius: 50%; background: var(--hanji); transform: translate(-50%, -50%); }
+.yut-board__node { position: absolute; left: var(--node-x); top: var(--node-y); width: 1.25rem; aspect-ratio: 1; border: 3px solid var(--ink); border-radius: 50%; background: #C9A46A; transform: translate(-50%, -50%); }
 
 /* 출발점과 지름길 길목: 여기에 정확히 멈추면 길이 갈리므로 크게 두르고 살촉으로 알린다. */
 .yut-board__node--start {
@@ -589,8 +589,34 @@ button, input, select, textarea { min-height: 44px; }
   .yut-piece { min-width: 44px; min-height: 44px; }
 }
 
+/* 내 차례: 들어오는 순간 가운데 알림을 띄우고, 차례 동안 조작판과 윷판을 금색으로 두른다. */
+.game-screen--my-turn .turn-panel { border-color: var(--gold); animation: my-turn-glow 1.6s ease-in-out infinite; }
+.game-screen--my-turn .yut-board { border-color: var(--gold); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 55%, transparent), 0 16px 40px rgb(31 39 36 / 10%); }
+.turn-banner { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; pointer-events: none; }
+.turn-banner__text {
+  border: 4px solid var(--ink); border-radius: 1.25rem;
+  background: linear-gradient(135deg, var(--gold), color-mix(in srgb, var(--gold) 70%, var(--vermilion)));
+  color: var(--ink); padding: .9rem 2.4rem;
+  font-size: clamp(2rem, 6vw, 3.5rem); font-weight: 900; letter-spacing: .08em;
+  box-shadow: 0 6px 0 var(--ink), 0 20px 50px rgb(31 39 36 / 35%);
+  animation: turn-banner-in 2.2s ease-out forwards;
+}
+@keyframes turn-banner-in {
+  0% { opacity: 0; transform: scale(.6) rotate(-4deg); }
+  12% { opacity: 1; transform: scale(1.08) rotate(1deg); }
+  20% { transform: scale(1) rotate(0); }
+  80% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(.96) translateY(-.75rem); }
+}
+@keyframes my-turn-glow {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 45%, transparent); }
+  50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--gold) 70%, transparent), 0 0 24px color-mix(in srgb, var(--gold) 60%, transparent); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .yut-sticks[data-animating="true"] .yut-stick__body, .emoji-reactions__stream span { animation: none; }
   .yut-stick__body { transition: none; }
+  .turn-banner__text { animation: none; }
+  .game-screen--my-turn .turn-panel { animation: none; box-shadow: 0 0 0 5px color-mix(in srgb, var(--gold) 60%, transparent); }
 }

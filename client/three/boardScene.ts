@@ -111,16 +111,20 @@ function addPaths(
   });
 }
 
-/** 칸. 출발점은 주홍, 길목과 방은 금색으로 두른다. DOM CSS가 하던 강조를 그대로 옮긴다. */
+/**
+ * 칸. 출발점은 주홍, 길목과 방은 금색으로 두른다. DOM CSS가 하던 강조를 그대로 옮긴다.
+ * 평범한 칸도 판(한지색)과 섞이지 않도록 진한 황토색 몸에 먹색 테를 두른다.
+ */
 function addNodes(
   THREE: ThreeModule,
   scene: import("three").Scene,
   disposables: BoardScene["disposables"],
 ): number {
-  const plain = new THREE.MeshStandardMaterial({ color: 0xf4ead3, roughness: 0.78 });
+  const plain = new THREE.MeshStandardMaterial({ color: 0xc9a46a, roughness: 0.78 });
+  const rim = new THREE.MeshStandardMaterial({ color: 0x1f2724, roughness: 0.7 });
   const start = new THREE.MeshStandardMaterial({ color: 0xc84a35, roughness: 0.6 });
   const gate = new THREE.MeshStandardMaterial({ color: 0xd5a62d, roughness: 0.6 });
-  disposables.push(plain, start, gate);
+  disposables.push(plain, rim, start, gate);
 
   const disc = new THREE.CylinderGeometry(NODE_RADIUS, NODE_RADIUS * 0.94, NODE_HEIGHT, 28);
   const ring = new THREE.TorusGeometry(NODE_RADIUS * 1.12, NODE_RADIUS * 0.13, 10, 30)
@@ -138,11 +142,9 @@ function addNodes(
     body.receiveShadow = true;
     scene.add(body);
 
-    if (isStart || isGate) {
-      const emphasis = new THREE.Mesh(ring, isStart ? start : gate);
-      emphasis.position.set(at.x, NODE_HEIGHT * 0.9, at.z);
-      scene.add(emphasis);
-    }
+    const emphasis = new THREE.Mesh(ring, isStart ? start : isGate ? gate : rim);
+    emphasis.position.set(at.x, NODE_HEIGHT * 0.9, at.z);
+    scene.add(emphasis);
   });
   return nodeIds.length;
 }

@@ -316,3 +316,33 @@ describe("finished game chrome", () => {
     expect(commands).toEqual([]);
   });
 });
+
+describe("my turn signal", () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("pops a banner when the turn reaches me, then lets it go while the glow stays", () => {
+    vi.useFakeTimers();
+    const theirs = gameSnapshot({ game: { ...gameSnapshot().game!, currentPlayerId: "player-1" } });
+    const { container, rerender } = render(
+      <GameScreen snapshot={theirs} playerId="player-2" sendCommand={() => undefined} />,
+    );
+    expect(screen.queryByTestId("turn-banner")).not.toBeInTheDocument();
+    expect(container.querySelector(".game-screen")).not.toHaveClass("game-screen--my-turn");
+
+    const mine = gameSnapshot({ version: 19, game: { ...theirs.game!, currentPlayerId: "player-2" } });
+    rerender(<GameScreen snapshot={mine} playerId="player-2" sendCommand={() => undefined} />);
+    expect(screen.getByTestId("turn-banner")).toHaveTextContent("내 차례!");
+    expect(container.querySelector(".game-screen")).toHaveClass("game-screen--my-turn");
+
+    act(() => { vi.advanceTimersByTime(2500); });
+    expect(screen.queryByTestId("turn-banner")).not.toBeInTheDocument();
+    expect(container.querySelector(".game-screen")).toHaveClass("game-screen--my-turn");
+
+    // 한 번 더 던지느라 차례가 이어질 때는 다시 띄우지 않는다.
+    rerender(<GameScreen snapshot={{ ...mine, version: 20 }} playerId="player-2" sendCommand={() => undefined} />);
+    expect(screen.queryByTestId("turn-banner")).not.toBeInTheDocument();
+  });
+});

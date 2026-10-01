@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { InRoomCommand, PublicRoomSnapshot, ServerError } from "../../shared/protocol";
 import type { ConnectionState } from "../useGameSession";
 import { newRequestId } from "../requestId";
@@ -30,6 +30,8 @@ const CONNECTION_MESSAGES: Record<ConnectionState, string> = {
   offline: "연결이 끊겼습니다. 연결 상태를 확인해 주세요.",
 };
 const NOOP = () => undefined;
+/** 내 차례 알림이 떠 있는 시간. 움직임을 줄인 사람도 읽을 만큼은 둔다. */
+const TURN_BANNER_MS = 2200;
 
 export function GameScreen({
   snapshot,
@@ -42,6 +44,19 @@ export function GameScreen({
 }: GameScreenProps) {
   const [playersOpen, setPlayersOpen] = useState(true);
   const game = snapshot.game;
+  const isMyTurn = Boolean(game && playerId && game.currentPlayerId === playerId && game.winnerId === null);
+  // 남의 차례에서 내 차례로 넘어오는 순간에만 알림을 띄운다. 윷·모로 한 번 더 던질 때는 띄우지 않는다.
+  const [turnBanner, setTurnBanner] = useState({ wasMyTurn: isMyTurn, count: isMyTurn ? 1 : 0 });
+  if (turnBanner.wasMyTurn !== isMyTurn) {
+    setTurnBanner((current) => ({ wasMyTurn: isMyTurn, count: isMyTurn ? current.count + 1 : current.count }));
+  }
+  const [bannerShownFor, setBannerShownFor] = useState(0);
+  useEffect(() => {
+    if (turnBanner.count === 0) return;
+    const timer = window.setTimeout(() => setBannerShownFor(turnBanner.count), TURN_BANNER_MS);
+    return () => window.clearTimeout(timer);
+  }, [turnBanner.count]);
+  const showTurnBanner = isMyTurn && turnBanner.count > 0 && bannerShownFor !== turnBanner.count;
   if (!game) return <main><p role="alert">게임 정보를 불러오지 못했습니다.</p></main>;
 
   const currentPlayer = snapshot.players.find((player) => player.id === game.currentPlayerId);
@@ -64,7 +79,7 @@ export function GameScreen({
 
   return (
     <main
-      className="game-screen"
+      className={`game-screen${isMyTurn ? " game-screen--my-turn" : ""}`}
       data-room-version={snapshot.version}
       data-room-phase={snapshot.phase}
       data-current-player-id={game.currentPlayerId}
@@ -155,6 +170,12 @@ export function GameScreen({
       </div>
 
       <EventAnnouncer events={game.events} />
+
+      {showTurnBanner && (
+        <div key={turnBanner.count} className="turn-banner" data-testid="turn-banner" aria-hidden="true">
+          <span className="turn-banner__text">내 차례!</span>
+        </div>
+      )}
 
       {winnerName && (
         <ResultDialog
