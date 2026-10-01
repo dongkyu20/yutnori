@@ -31,6 +31,14 @@ function guidanceFor(game: PublicGameState): string {
   return STAGE_GUIDANCE[game.turnStage];
 }
 
+/** 패널 맨 위에 크게 적는 "지금 할 일". 남의 차례에는 누구를 기다리는지 적는다. */
+function headlineFor(game: PublicGameState, isCurrentPlayer: boolean, currentPlayerNickname: string): string {
+  if (game.turnStage === "COMPLETE") return STAGE_GUIDANCE.COMPLETE;
+  if (!isCurrentPlayer) return `${currentPlayerNickname}님 차례를 기다리는 중`;
+  if (game.turnStage === "AWAITING_THROW" && game.pendingThrows.length === 0) return "내 차례! 윷을 던지세요";
+  return guidanceFor(game);
+}
+
 export function TurnPanel({
   game,
   currentPlayerNickname,
@@ -69,9 +77,21 @@ export function TurnPanel({
 
   return (
     <aside className="turn-panel" aria-labelledby="turn-panel-heading">
-      <h2 id="turn-panel-heading">차례 안내</h2>
-      <p role="status" aria-live="polite">현재 차례: <strong>{currentPlayerNickname}</strong></p>
-      <p className="turn-panel__guidance">{guidanceFor(game)}</p>
+      <h2 id="turn-panel-heading">지금 할 일</h2>
+      <p className="turn-panel__guidance turn-panel__headline">{headlineFor(game, isCurrentPlayer, currentPlayerNickname)}</p>
+      <p className="turn-panel__current" role="status" aria-live="polite">현재 차례: <strong>{currentPlayerNickname}</strong></p>
+      {game.turnStage === "AWAITING_THROW" && isCurrentPlayer && (
+        // 던질 사람에게만 보인다. 남의 차례에 잠긴 버튼을 늘어놓으면 내가 뭘 해야 하는지 헷갈린다.
+        <div className="throw-controls">
+          <button
+            type="button"
+            className="turn-panel__throw"
+            onClick={() => onThrow()}
+          >
+            윷 던지기
+          </button>
+        </div>
+      )}
       <section className="yut-result" aria-labelledby="yut-result-heading">
         <h3 id="yut-result-heading">윷 결과</h3>
         <p data-throw-settled={animating ? undefined : "true"}>{resultText}</p>
@@ -99,18 +119,6 @@ export function TurnPanel({
             ))}
           </ul>
         </section>
-      )}
-      {game.turnStage === "AWAITING_THROW" && (
-        <div className="throw-controls">
-          <button
-            type="button"
-            className="turn-panel__throw"
-            disabled={!isCurrentPlayer}
-            onClick={() => onThrow()}
-          >
-            윷 던지기
-          </button>
-        </div>
       )}
     </aside>
   );

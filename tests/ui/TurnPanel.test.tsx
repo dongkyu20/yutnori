@@ -41,14 +41,18 @@ describe("TurnPanel", () => {
     vi.useRealTimers();
   });
 
-  it("announces the current turn, shows stage-specific Korean guidance, and disables another player's action", () => {
+  it("announces the current turn, shows stage-specific guidance, and offers the throw only to the current player", () => {
     const { rerender } = render(
       <TurnPanel game={createGame()} currentPlayerNickname="민수" isCurrentPlayer={false} onThrow={() => undefined} />,
     );
 
     expect(screen.getByRole("status")).toHaveTextContent("현재 차례: 민수");
-    expect(screen.getByText("윷을 던지세요")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "윷 던지기" })).toBeDisabled();
+    expect(screen.getByText("민수님 차례를 기다리는 중")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "윷 던지기" })).not.toBeInTheDocument();
+
+    rerender(<TurnPanel game={createGame()} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />);
+    expect(screen.getByText("내 차례! 윷을 던지세요")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "윷 던지기" })).toBeEnabled();
 
     rerender(
       <TurnPanel

@@ -242,30 +242,45 @@ describe("finished game chrome", () => {
     expect(screen.getByRole("status", { name: "연결 상태" })).toHaveTextContent(expected);
   });
 
-  it("provides independent participant and event panel toggles for the mobile flow", async () => {
+  it("lists every player in one strip with whose turn it is and how many pieces wait", () => {
+    const base = gameSnapshot();
+    const snapshot = gameSnapshot({
+      game: {
+        ...base.game!,
+        pieces: [
+          { id: "p1-a", ownerId: "player-1", status: "HOME", stackSize: 1 },
+          { id: "p1-b", ownerId: "player-1", status: "FINISHED", stackSize: 1 },
+          { id: "p2-a", ownerId: "player-2", status: "HOME", stackSize: 1 },
+        ],
+      },
+    });
+    render(<GameScreen snapshot={snapshot} playerId="player-2" sendCommand={() => undefined} />);
+
+    const strip = screen.getByRole("list", { name: "참가자" });
+    expect(strip.querySelector(".game-player[aria-current='true'] strong")).toHaveTextContent("민수");
+    expect(strip.querySelector("[data-player-id='player-1']")).toHaveTextContent("대기 1 · 완주 1");
+    expect(strip.querySelector("[data-player-id='player-2']")).toHaveTextContent("나");
+    expect(screen.queryByRole("button", { name: /참가자 패널/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps the connection line quiet while connected", () => {
+    render(<GameScreen snapshot={gameSnapshot()} playerId="player-1" sendCommand={() => undefined} />);
+    const status = screen.getByRole("status", { name: "연결 상태" });
+    expect(status).toHaveClass("connection-status--connected");
+    expect(status).toHaveTextContent("서버와 연결되었습니다.");
+  });
+
+  it("copies an invite link from the game bar", async () => {
     const user = userEvent.setup();
-    render(
-      <GameScreen
-        snapshot={gameSnapshot()}
-        playerId="player-1"
-        connectionState="connected"
-        reactions={[]}
-        sendCommand={() => undefined}
-        leaveRoom={() => undefined}
-      />,
-    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(<GameScreen snapshot={gameSnapshot()} playerId="player-1" sendCommand={() => undefined} />);
 
-    const playersToggle = screen.getByRole("button", { name: "참가자 패널 접기" });
-    const playersPanel = screen.getByRole("region", { name: "참가자" });
-    expect(playersToggle).toHaveAttribute("aria-expanded", "true");
-    // 경기 기록 패널은 없앴으므로 접을 것도 없다.
-    expect(screen.queryByRole("button", { name: /경기 기록 패널/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "초대 링크 복사" }));
 
-    await user.click(playersToggle);
-    expect(playersToggle).toHaveAccessibleName("참가자 패널 펼치기");
-    expect(playersToggle).toHaveAttribute("aria-expanded", "false");
-    expect(playersPanel).not.toHaveAttribute("hidden");
-    expect(playersPanel).toHaveClass("game-panel--collapsed");
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}${window.location.pathname}?room=AB2CDE`);
+    expect(screen.getByRole("button", { name: "초대 링크 복사" })).toHaveTextContent("복사됨");
+    vi.unstubAllGlobals();
   });
 
   it("asks before leaving a game in progress and stays put when the answer is no", async () => {

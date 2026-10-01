@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { InRoomCommand, PublicRoomSnapshot, ServerError } from "../../shared/protocol";
 import type { ConnectionState } from "../useGameSession";
+import { inviteUrl } from "../invite";
 import { newRequestId } from "../requestId";
 import { sideClass, sideName, sideSlotOf, sideSlots } from "../sideColor";
 import { EmojiReactions, type ReactionEvent } from "./EmojiReactions";
@@ -30,6 +31,8 @@ const CONNECTION_MESSAGES: Record<ConnectionState, string> = {
   offline: "연결이 끊겼습니다. 연결 상태를 확인해 주세요.",
 };
 const NOOP = () => undefined;
+/** 초대 링크를 복사했다는 표시를 버튼에 남겨 두는 시간. */
+const COPY_FEEDBACK_MS = 2000;
 /** 내 차례 알림이 떠 있는 시간. 움직임을 줄인 사람도 읽을 만큼은 둔다. */
 const TURN_BANNER_MS = 2200;
 
@@ -42,7 +45,7 @@ export function GameScreen({
   sendCommand,
   leaveRoom = NOOP,
 }: GameScreenProps) {
-  const [playersOpen, setPlayersOpen] = useState(true);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const game = snapshot.game;
   const isMyTurn = Boolean(game && playerId && game.currentPlayerId === playerId && game.winnerId === null);
   // 남의 차례에서 내 차례로 넘어오는 순간에만 알림을 띄운다. 윷·모로 한 번 더 던질 때는 띄우지 않는다.
@@ -56,6 +59,11 @@ export function GameScreen({
     const timer = window.setTimeout(() => setBannerShownFor(turnBanner.count), TURN_BANNER_MS);
     return () => window.clearTimeout(timer);
   }, [turnBanner.count]);
+  useEffect(() => {
+    if (copyState === "idle") return;
+    const timer = window.setTimeout(() => setCopyState("idle"), COPY_FEEDBACK_MS);
+    return () => window.clearTimeout(timer);
+  }, [copyState]);
   const showTurnBanner = isMyTurn && turnBanner.count > 0 && bannerShownFor !== turnBanner.count;
   if (!game) return <main><p role="alert">게임 정보를 불러오지 못했습니다.</p></main>;
 
@@ -69,6 +77,25 @@ export function GameScreen({
       ?? (snapshot.mode === "team"
         ? `${game.winnerId}팀`
         : snapshot.players.find((player) => player.id === game.winnerId)?.nickname ?? game.winnerId);
+
+  const copyInvite = async (): Promise<void> => {
+    try {
+      if (!navigator.clipboard) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(inviteUrl(snapshot.roomCode));
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  };
+
+  /** 그 편의 출발 대기·완주 말 개수. 팀전은 팀이 함께 쓰는 말을 센다. */
+  const pieceCounts = (controllerId: string) => {
+    const owned = game.pieces.filter((piece) => (piece.teamId ?? piece.ownerId) === controllerId);
+    return {
+      home: owned.filter((piece) => piece.status === "HOME").length,
+      finished: owned.filter((piece) => piece.status === "FINISHED").length,
+    };
+  };
 
   // 진행 중인 판을 두고 나가면 내 말이 걷힌다. 되돌릴 수 없으므로 한 번 묻는다.
   const confirmLeave = (): void => {
@@ -84,63 +111,53 @@ export function GameScreen({
       data-room-phase={snapshot.phase}
       data-current-player-id={game.currentPlayerId}
     >
-      <header className="game-screen__header">
-        <div><p className="game-screen__eyebrow">우리의 한 판</p><h1>한판윷</h1></div>
-        <div className="game-screen__header-side">
-          <p>방 코드 <strong>{snapshot.roomCode}</strong></p>
-          <button type="button" className="room-leave" onClick={confirmLeave}>방 나가기</button>
-        </div>
+      <header className="game-bar">
+        <strong className="game-bar__title">한판윷</strong>
+        <p className="game-bar__room">방 <strong>{snapshot.roomCode}</strong></p>
+        <p
+          className={`connection-status connection-status--${connectionState}`}
+          role="status"
+          aria-label="연결 상태"
+          title={CONNECTION_MESSAGES[connectionState]}
+        >
+          {/* 잘 이어져 있을 때는 점 하나로 줄인다. 글은 스크린 리더와 툴팁에 남는다. */}
+          <span className={connectionState === "connected" ? "sr-only" : undefined}>{CONNECTION_MESSAGES[connectionState]}</span>
+        </p>
+        <span className="game-bar__spacer" />
+        <button type="button" className="game-bar__invite" aria-label="초대 링크 복사" onClick={() => void copyInvite()}>
+          {copyState === "copied" ? "복사됨" : copyState === "failed" ? "복사 실패" : "초대 링크"}
+        </button>
+        <button type="button" className="room-leave" onClick={confirmLeave}>방 나가기</button>
       </header>
-      <p
-        className={`connection-status connection-status--${connectionState}`}
-        role="status"
-        aria-label="연결 상태"
-      >
-        {CONNECTION_MESSAGES[connectionState]}
-      </p>
       <RoomAlert error={error} />
 
-      <div className="game-screen__layout">
-        <aside className="game-screen__players">
-          <button
-            className="panel-toggle"
-            type="button"
-            aria-controls="game-player-panel"
-            aria-expanded={playersOpen}
-            onClick={() => setPlayersOpen((open) => !open)}
-          >
-            참가자 패널 {playersOpen ? "접기" : "펼치기"}
-          </button>
-          <section
-            id="game-player-panel"
-            className={playersOpen ? "game-panel" : "game-panel game-panel--collapsed"}
-            aria-label="참가자"
-          >
-            <h2>참가자</h2>
-            <ul className="game-player-list">
-              {snapshot.players.map((player) => {
-                const slot = sideSlotOf(sides, { teamId: player.teamId, ownerId: player.id });
-                return (
-                  <li
-                    key={player.id}
-                    className={sideClass("game-player", slot)}
-                    aria-current={player.id === game.currentPlayerId ? "true" : undefined}
-                    data-player-id={player.id}
-                    data-team-id={player.teamId}
-                    data-side-slot={slot}
-                  >
-                    <strong>{player.nickname}</strong>
-                    {player.teamId && <span>{player.teamId}팀</span>}
-                    {sideName(slot) && <span>{sideName(slot)} 말</span>}
-                    <span>{player.connected ? "연결됨" : "연결 끊김"}</span>
-                    {player.id === game.currentPlayerId && <span>차례</span>}
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        </aside>
+      <ul className="game-players" aria-label="참가자">
+        {snapshot.players.map((player) => {
+          const slot = sideSlotOf(sides, { teamId: player.teamId, ownerId: player.id });
+          const counts = pieceCounts(player.teamId ?? player.id);
+          const isTurn = player.id === game.currentPlayerId;
+          return (
+            <li
+              key={player.id}
+              className={sideClass("game-player", slot)}
+              aria-current={isTurn ? "true" : undefined}
+              data-player-id={player.id}
+              data-team-id={player.teamId}
+              data-side-slot={slot}
+            >
+              <strong>{player.nickname}</strong>
+              {player.id === playerId && <span className="game-player__me">나</span>}
+              {player.teamId && <span className="game-player__meta">{player.teamId}팀</span>}
+              {sideName(slot) && <span className="game-player__meta">{sideName(slot)} 말</span>}
+              <span className="game-player__meta">대기 {counts.home} · 완주 {counts.finished}</span>
+              {!player.connected && <span className="game-player__offline">연결 끊김</span>}
+              {isTurn && <span className="sr-only">차례</span>}
+            </li>
+          );
+        })}
+      </ul>
 
+      <div className="game-screen__layout">
         <section className="game-screen__board-column" aria-label="경기판">
           <YutBoard
             game={game}
@@ -154,7 +171,7 @@ export function GameScreen({
           />
         </section>
 
-        <section className="game-screen__turn-column" aria-label="차례 조작">
+        <section className="game-screen__turn-column action-panel" aria-label="차례 조작">
           <TurnPanel
             game={game}
             currentPlayerNickname={currentPlayer?.nickname ?? game.currentPlayerId}
