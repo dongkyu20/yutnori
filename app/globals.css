@@ -437,8 +437,10 @@ button, input, select, textarea { min-height: 44px; }
 .yut-piece--travelling { color: transparent; text-shadow: none; }
 .yut-route { position: absolute; left: var(--node-x); top: var(--node-y); min-width: 44px; transform: translate(-50%, calc(-50% + 2.6rem)); z-index: 3; border: 2px solid var(--ink); border-radius: 999px; background: #FFF4A8; color: var(--ink); padding: .35rem .65rem; font-weight: 800; cursor: pointer; }
 .yut-board__racks { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-.yut-board__racks section { border: 2px solid #79684F; border-radius: .75rem; padding: .75rem; }
-.yut-board__racks h3 { margin: 0 0 .5rem; }
+.yut-board__racks section { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; border: 2px solid rgb(121 104 79 / 55%); border-radius: .75rem; padding: .6rem .75rem; }
+.yut-board__racks h3 { margin: 0; font-size: .9rem; color: var(--muted-ink); }
+/* 지금 판에 올릴 수 있는 대기 더미는 금색으로 두른다. */
+.yut-board__rack .yut-piece:enabled { box-shadow: 0 0 0 3px var(--gold), 0 2px 0 var(--ink); }
 .yut-board__rack { display: flex; flex-wrap: wrap; gap: .5rem; min-height: 3.2rem; }
 
 .turn-panel { display: grid; gap: 1.15rem; border: 3px solid var(--ink); border-radius: 1rem; background: var(--paper); padding: clamp(1rem, 2vw, 1.4rem); }

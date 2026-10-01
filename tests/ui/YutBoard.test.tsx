@@ -118,6 +118,43 @@ describe("YutBoard", () => {
     expect(screen.getByRole("button", { name: "B팀 말 1개 바깥 지점 10" })).toBeDisabled();
   });
 
+  it("stacks a side's waiting pieces into one button that picks a movable one", async () => {
+    const user = userEvent.setup();
+    const game = createGame({
+      pieces: [
+        { id: "A-3", ownerId: "A", teamId: "A", status: "HOME", stackSize: 1 },
+        { id: "A-4", ownerId: "A", teamId: "A", status: "HOME", stackSize: 1 },
+        { id: "A-5", ownerId: "A", teamId: "A", status: "FINISHED", stackSize: 1 },
+        { id: "B-1", ownerId: "B", teamId: "B", status: "BOARD", nodeId: "O10", stackSize: 1 },
+      ],
+      pendingThrows: [{
+        id: "event-1",
+        result: "GAE",
+        legalPieceIds: ["A-4"],
+        moves: [{ pieceId: "A-4", destinationNodeId: "O2", path: ["O1", "O2"], finished: false }],
+      }],
+      legalPieceIds: ["A-4"],
+    });
+    render(
+      <YutBoard
+        game={game}
+        players={players}
+        playerId="player-a"
+        legalPieceIds={["A-4"]}
+        onSelectMove={() => undefined}
+        onSelectRoute={() => undefined}
+      />,
+    );
+
+    // 대기 말을 하나씩 늘어놓지 않고 편마다 한 덩어리로 묶는다.
+    const home = screen.getByRole("button", { name: "A팀 말 2개 출발 대기" });
+    expect(home).toHaveAttribute("data-piece-ids", "A-3,A-4");
+    await user.click(home);
+    expect(home).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("move-choices")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "A팀 말 1개 완주" })).toBeDisabled();
+  });
+
   it("keeps a long nickname from stretching the piece out of round", () => {
     // 말 안에 이름을 다 적으면 이름이 긴 편의 말만 타원이 된다. 실제로 그렇게 보였다.
     render(

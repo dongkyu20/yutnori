@@ -193,9 +193,10 @@ function groupPieces(pieces: readonly Piece[]): PieceGroup[] {
   const groups = new Map<string, PieceGroup>();
   for (const piece of pieces) {
     const controllerId = piece.teamId ?? piece.ownerId;
+    // 판 위 말은 칸과 편으로, 대기·완주 말은 편으로만 묶는다. 대기 말을 하나씩 늘어놓으면 랙이 어수선하다.
     const key = piece.status === "BOARD"
       ? `BOARD:${piece.nodeId}:${controllerId}`
-      : `${piece.status}:${piece.id}`;
+      : `${piece.status}:${controllerId}`;
     const group = groups.get(key);
     if (group) group.pieces.push(piece);
     else groups.set(key, {
