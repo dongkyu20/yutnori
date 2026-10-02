@@ -17,7 +17,8 @@ type ThreeModule = typeof import("three");
 export const BOARD_WORLD_SIZE = 10;
 /** 판 두께. 칸과 말이 그 위에 앉는다. */
 const BOARD_THICKNESS = 0.35;
-const NODE_RADIUS = 0.062 * BOARD_WORLD_SIZE;
+// 칸이 판을 너무 채워 답답해 보여 처음(0.062)보다 15% 줄였다. 말(0.042)은 여전히 칸 안에 앉는다.
+const NODE_RADIUS = 0.0527 * BOARD_WORLD_SIZE;
 const NODE_HEIGHT = 0.05;
 const PATH_WIDTH = 0.022 * BOARD_WORLD_SIZE;
 
@@ -28,8 +29,11 @@ const PATH_WIDTH = 0.022 * BOARD_WORLD_SIZE;
  */
 export const SHOCKWAVE_INNER_RADIUS = 0.05 * BOARD_WORLD_SIZE;
 export const SHOCKWAVE_OUTER_RADIUS = 0.065 * BOARD_WORLD_SIZE;
-/** 다 퍼진 고리의 바깥 반지름. 칸 표식의 2.5배라 도착 칸을 넉넉히 넘어선다. */
-export const SHOCKWAVE_MAX_RADIUS = NODE_RADIUS * 2.5;
+/**
+ * 다 퍼진 고리의 바깥 반지름. 도착 칸을 넉넉히 넘어선다.
+ * 칸을 줄일 때 잡기 연출까지 작아지지 않도록 칸 크기와 떼어 둔다(줄이기 전 칸의 2.5배).
+ */
+export const SHOCKWAVE_MAX_RADIUS = 0.155 * BOARD_WORLD_SIZE;
 /** 고리가 앉는 높이. 길과 칸 표식(길목 고리 포함)보다 위라 판에 파묻히지 않는다. */
 const SHOCKWAVE_HEIGHT = 0.16;
 const SHOCKWAVE_OPACITY = 0.85;
