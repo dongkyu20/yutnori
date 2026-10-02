@@ -98,6 +98,8 @@ export type TossStyle = (typeof TOSS_STYLES)[number];
 const STAND_ANGLE = 1.32;
 /** 던지기 가운데 한 가락이 버틸 확률. */
 const TEETER_CHANCE = 0.2;
+/** 모든 연출 시간(나는 시간, 가락 사이 간격, 버티는 시간)을 늘리는 비율. 1보다 크면 느려진다. */
+export const TOSS_TIME_SCALE = 1.2;
 /** 윷·모일 때 느려지기 시작하는 지점과 늘어나는 배율. */
 const SLOW_FROM = 0.55;
 const SLOW_FACTOR = 2.4;
@@ -232,10 +234,10 @@ export function layoutFor(
         ? side * between(random, 0.75, MAX_DRIFT_X)
         : between(random, -MAX_DRIFT_X, MAX_DRIFT_X),
       // 흩뿌리기는 들어오는 쪽에서 가까운 가락부터 차례로 날린다.
-      delayMs: style === "scatter"
-        ? Math.round((side > 0 ? count - 1 - index : index) * staggerMs)
-        : Math.round(between(random, 0, 120)),
-      tossMs: Math.round(sharedFlightMs * between(random, 0.88, 1.12)),
+      delayMs: Math.round(TOSS_TIME_SCALE * (style === "scatter"
+        ? (side > 0 ? count - 1 - index : index) * staggerMs
+        : between(random, 0, 120))),
+      tossMs: Math.round(TOSS_TIME_SCALE * sharedFlightMs * between(random, 0.88, 1.12)),
       lift: sharedLift * (style === "high" ? between(random, 0.97, 1.05) : between(random, 0.84, 1.16)),
       bounce: style === "low" ? between(random, 0.05, 0.12) : between(random, 0.08, 0.34),
       bounces: style === "low" ? 1 : wholeBetween(random, 1, 3),
@@ -249,7 +251,7 @@ export function layoutFor(
       pitch: style === "spin" ? between(random, 0, 0.25) : between(random, 0, 1),
       slowFrom: slow ? SLOW_FROM : 1,
       slowFactor: slow ? SLOW_FACTOR : 1,
-      teeterMs: index === teeterIndex ? Math.round(between(random, 650, 900)) : 0,
+      teeterMs: index === teeterIndex ? Math.round(TOSS_TIME_SCALE * between(random, 650, 900)) : 0,
       durationMs: 0,
     };
     spot.durationMs = Math.round(flightMsOf(spot)) + spot.teeterMs;

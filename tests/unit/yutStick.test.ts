@@ -13,6 +13,7 @@ import {
   restRoll,
   tossStyleFor,
   TOSS_STYLES,
+  TOSS_TIME_SCALE,
   tossLift,
   CONTENT,
   CUT_DEPTH,
@@ -267,10 +268,15 @@ describe("무작위 궤적 안전성", () => {
     const spots = PHYSICS_SEEDS.flatMap((seed) => layoutFor(seed, 4));
     spots.forEach((spot) => {
       expect(spot.delayMs).toBeGreaterThanOrEqual(0);
-      // 흩뿌리기는 가락마다 차례로 날리므로 마지막 가락이 0.33초쯤 늦다.
-      expect(spot.delayMs).toBeLessThanOrEqual(340);
-      expect(spot.tossMs).toBeGreaterThanOrEqual(570);
-      expect(spot.tossMs).toBeLessThanOrEqual(1_290);
+      // 흩뿌리기는 가락마다 차례로 날리므로 마지막 가락이 0.4초쯤 늦다.
+      // 시간 값은 모두 TOSS_TIME_SCALE(1.2)만큼 느리게 늘려 둔다.
+      expect(spot.delayMs).toBeLessThanOrEqual(340 * 1.2);
+      expect(spot.tossMs).toBeGreaterThanOrEqual(570 * 1.2);
+      expect(spot.tossMs).toBeLessThanOrEqual(1_290 * 1.2);
+      if (spot.teeterMs > 0) {
+        expect(spot.teeterMs).toBeGreaterThanOrEqual(650 * 1.2);
+        expect(spot.teeterMs).toBeLessThanOrEqual(900 * 1.2 + 1);
+      }
       // 낮게 굴리기는 낮게 날고 일찍 닿는다.
       expect(spot.lift).toBeGreaterThan(0.25);
       expect(spot.lift).toBeLessThan(1.37);
@@ -394,6 +400,10 @@ describe("구도", () => {
 });
 
 describe("던지기 스타일과 극적인 순간", () => {
+  it("모든 연출 시간을 같은 비율로 늘려 조금 느리게 보여 준다", () => {
+    expect(TOSS_TIME_SCALE).toBe(1.2);
+  });
+
   const STYLE_SEEDS = Array.from({ length: 240 }, (unusedValue, index) => `style-${index}`);
   const MIXED = [true, false, true, false];
   const YUT = [true, true, true, true];
@@ -483,6 +493,7 @@ describe("던지기 스타일과 극적인 순간", () => {
         expect(group.rotation.toArray()).toEqual(rested[index].rotation.toArray());
       });
     });
-  });
+    // 120개 시드를 프레임마다 두 구도로 살피므로 오래 걸린다.
+  }, 30_000);
 });
 
