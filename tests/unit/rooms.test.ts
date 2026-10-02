@@ -1237,3 +1237,49 @@ describe("team shuffle", () => {
     expect(snapshot.players.some((player) => player.colorSlot === 3)).toBe(false);
   });
 });
+
+describe("diagnostic log", () => {
+  const recordingService = (clock: FakeClock) => {
+    const entries: Array<{ event: string; details: Record<string, unknown> }> = [];
+    const service = new RoomService({
+      ...clock.options(sequenceRandom(5)),
+      log: (event, details) => entries.push({ event, details }),
+    });
+    return { service, entries };
+  };
+
+  it("records a disconnect on the current turn and the move the server then makes for that player", () => {
+    const clock = new FakeClock();
+    const { service, entries } = recordingService(clock);
+    const [host] = readyIndividualGame(service);
+
+    service.disconnect(host.playerId);
+    clock.advance(0);
+
+    const disconnected = entries.find((entry) => entry.event === "player_disconnected");
+    expect(disconnected?.details).toMatchObject({
+      roomCode: host.snapshot.roomCode, playerId: host.playerId, nickname: "Host", phase: "playing", currentTurn: true,
+    });
+    const auto = entries.find((entry) => entry.event === "auto_action");
+    expect(auto?.details).toMatchObject({
+      roomCode: host.snapshot.roomCode, playerId: host.playerId, nickname: "Host", reason: "disconnected", command: "THROW",
+    });
+  });
+
+  it("records an auto action caused by the turn timer and a reconnect", () => {
+    const clock = new FakeClock();
+    const { service, entries } = recordingService(clock);
+    const [host] = readyIndividualGame(service);
+
+    clock.advance(45_000);
+    expect(entries.find((entry) => entry.event === "auto_action")?.details).toMatchObject({
+      playerId: host.playerId, reason: "timeout",
+    });
+
+    service.disconnect(host.playerId);
+    service.reconnect(host.reconnectToken);
+    expect(entries.find((entry) => entry.event === "player_reconnected")?.details).toMatchObject({
+      roomCode: host.snapshot.roomCode, playerId: host.playerId, nickname: "Host",
+    });
+  });
+});

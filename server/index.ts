@@ -25,6 +25,8 @@ export interface BuildServerOptions {
   gatewayRateLimit?: Partial<GatewayRateLimitOptions>;
   publicOrigin?: string;
   roomService?: RoomService;
+  /** 연결 끊김·재접속·자동 행동을 남길 곳. 주지 않으면 남기지 않는다. */
+  log?: ServerLog;
 }
 
 interface ShutdownServer {
@@ -88,9 +90,17 @@ export function resolveServerRoomOptions(
   };
 }
 
-function createServerRoomService(): RoomService {
+export type ServerLog = (event: string, details: Record<string, unknown>) => void;
+
+/** 한 줄짜리 JSON으로 남긴다. 시각이 붙어 있어 "그때 무슨 일이 있었나"를 나중에 찾을 수 있다. */
+export const consoleServerLog: ServerLog = (event, details) => {
+  console.info(JSON.stringify({ at: new Date().toISOString(), event, ...details }));
+};
+
+function createServerRoomService(log?: ServerLog): RoomService {
   return new RoomService({
     ...resolveServerRoomOptions(),
+    ...(log ? { log } : {}),
     schedule: (fn, ms) => {
       const timer = setTimeout(fn, ms);
       timer.unref();
@@ -102,11 +112,12 @@ function createServerRoomService(): RoomService {
 
 export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
   const server = Fastify();
-  const roomService = options.roomService ?? createServerRoomService();
+  const roomService = options.roomService ?? createServerRoomService(options.log);
   const gateway = createGateway(server.server, {
     publicOrigin: options.publicOrigin ?? DEFAULT_PUBLIC_ORIGIN,
     roomService,
     rateLimit: options.gatewayRateLimit,
+    ...(options.log ? { log: options.log } : {}),
   });
   const cleanupTimer = setInterval(
     () => roomService.removeExpiredRooms(),
@@ -125,8 +136,10 @@ export function buildServer(options: BuildServerOptions = {}): FastifyInstance {
 
 export async function startServer(options: StartServerOptions = {}): Promise<FastifyInstance> {
   const port = options.port ?? Number(process.env.PORT ?? DEFAULT_PORT);
+  // 실제로 띄우는 서버만 진단 로그를 터미널에 남긴다. 테스트가 만드는 서버는 조용하다.
   const server = options.server ?? buildServer({
     publicOrigin: options.publicOrigin ?? process.env.PUBLIC_ORIGIN,
+    log: consoleServerLog,
   });
   await server.listen({ host: "0.0.0.0", port });
   registerGracefulShutdown(server, options.signals);

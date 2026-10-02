@@ -308,6 +308,25 @@ describe("Socket.IO gateway", () => {
     expect(leakedSnapshots).toBe(0);
   });
 
+  it("logs why a player's socket closed so a skipped turn can be traced later", async () => {
+    const entries: Array<{ event: string; details: Record<string, unknown> }> = [];
+    const server = buildServer({ publicOrigin: PUBLIC_ORIGIN, log: (event, details) => entries.push({ event, details }) });
+    servers.push(server);
+    await server.listen({ host: "127.0.0.1", port: 0 });
+    const { port } = server.server.address() as AddressInfo;
+    const host = await openSocket(`http://127.0.0.1:${port}`);
+    const session = event<SessionPayload>(host, "session");
+    host.emit("command", { type: "CREATE_ROOM", nickname: "Host", mode: "individual" });
+    const { playerId } = await session;
+
+    host.disconnect();
+    await expect.poll(() => entries.map((entry) => entry.event)).toContain("player_disconnected");
+
+    expect(entries.find((entry) => entry.event === "socket_disconnected")?.details).toMatchObject({
+      playerId, reason: "client namespace disconnect",
+    });
+  });
+
   it("issues private sessions and sends both room members the same incremented public snapshot", async () => {
     const url = await startServer();
 

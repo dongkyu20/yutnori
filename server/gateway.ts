@@ -61,6 +61,8 @@ export interface GatewayOptions {
   publicOrigin: string;
   roomService?: RoomService;
   rateLimit?: Partial<GatewayRateLimitOptions>;
+  /** 소켓이 왜 끊겼는지 남긴다. 순간적인 끊김으로 서버가 대신 둔 차례를 나중에 가려내는 데 쓴다. */
+  log?: (event: string, details: Record<string, unknown>) => void;
 }
 
 export interface GatewayRateLimitOptions {
@@ -285,8 +287,11 @@ export function createGateway(httpServer: HttpServer, options: GatewayOptions): 
       }
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", (reason) => {
       const { playerId } = socket.data;
+      if (playerId) {
+        options.log?.("socket_disconnected", { playerId, roomCode: socket.data.roomCode, reason });
+      }
       if (!closing && playerId && activeSockets.get(playerId) === socket.id) {
         activeSockets.delete(playerId);
         roomService.disconnect(playerId);

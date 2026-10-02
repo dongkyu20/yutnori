@@ -90,6 +90,11 @@ export interface RoomServiceOptions {
   schedule: (fn: () => void, ms: number) => unknown;
   cancel: (id: unknown) => void;
   onListenerError?: (error: unknown) => void;
+  /**
+   * 원인을 나중에 가려낼 수 있도록 연결이 끊기고 이어진 때와 서버가 대신 둔 행동을 남긴다.
+   * 주지 않으면 아무것도 남기지 않는다.
+   */
+  log?: (event: string, details: Record<string, unknown>) => void;
 }
 
 export interface SessionResult {
@@ -249,6 +254,9 @@ export class RoomService {
       }
       room.version += 1;
       changed = true;
+      this.options.log?.("player_reconnected", {
+        roomCode: room.roomCode, playerId: player.id, nickname: player.nickname, phase: room.phase,
+      });
     }
 
     const result = this.sessionResult(room, player.id, token);
@@ -302,7 +310,11 @@ export class RoomService {
     }
     room.version += 1;
 
-    if (room.phase === "playing" && room.game?.currentPlayerId === playerId) {
+    const currentTurn = room.phase === "playing" && room.game?.currentPlayerId === playerId;
+    this.options.log?.("player_disconnected", {
+      roomCode: room.roomCode, playerId, nickname: player.nickname, phase: room.phase, currentTurn,
+    });
+    if (currentTurn) {
       this.scheduleAction(room, 0, true);
     }
     this.notify(room);
@@ -588,7 +600,17 @@ export class RoomService {
       return;
     }
 
-    room.game = applyGameCommand(room.game, chooseAutoCommand(room.game, this.options.random));
+    const autoCommand = chooseAutoCommand(room.game, this.options.random);
+    // 시간이 다 되어서인지, 연결이 끊겨서 곧바로 대신 둔 것인지를 남긴다.
+    this.options.log?.("auto_action", {
+      roomCode: room.roomCode,
+      playerId: room.game.currentPlayerId,
+      nickname: current?.nickname,
+      reason: current?.connected ? "timeout" : "disconnected",
+      command: autoCommand.type,
+      turnStage: room.game.turnStage,
+    });
+    room.game = applyGameCommand(room.game, autoCommand);
     room.version += 1;
     if (room.game.turnStage === "COMPLETE") {
       this.finishRoom(room);
