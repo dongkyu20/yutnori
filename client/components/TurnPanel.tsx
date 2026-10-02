@@ -32,9 +32,16 @@ function guidanceFor(game: PublicGameState): string {
 }
 
 /** 패널 맨 위에 크게 적는 "지금 할 일". 남의 차례에는 누구를 기다리는지 적는다. */
-function headlineFor(game: PublicGameState, isCurrentPlayer: boolean, currentPlayerNickname: string): string {
+function headlineFor(
+  game: PublicGameState,
+  isCurrentPlayer: boolean,
+  currentPlayerNickname: string,
+  rolling: boolean,
+): string {
   if (game.turnStage === "COMPLETE") return STAGE_GUIDANCE.COMPLETE;
   if (!isCurrentPlayer) return `${currentPlayerNickname}님 차례를 기다리는 중`;
+  // 굴러가는 동안 "윷이나 모가 나왔습니다"를 보이면 결과가 먼저 새어 나간다.
+  if (rolling) return "윷가락이 구르는 중…";
   if (game.turnStage === "AWAITING_THROW" && game.pendingThrows.length === 0) return "내 차례! 윷을 던지세요";
   return guidanceFor(game);
 }
@@ -47,6 +54,8 @@ export function TurnPanel({
 }: TurnPanelProps) {
   const currentThrowEventId = game.lastThrow?.eventId ?? null;
   const currentAnimationSeed = game.lastThrow?.animationSeed ?? "resting";
+  // 스냅샷마다 배열이 새로 오므로 글자로 바꿔 둔다. 그래야 다른 소식이 와도 타이머가 다시 돌지 않는다.
+  const currentStickKey = (game.lastThrow?.sticks ?? []).map((flat) => (flat ? "1" : "0")).join("");
   const [throwState, setThrowState] = useState(() => ({ eventId: currentThrowEventId, rolling: false }));
 
   // 새 던지기는 그리는 그 자리에서 굴리기 시작한다. 효과로 미루면 결과 글자가
@@ -63,10 +72,10 @@ export function TurnPanel({
     const timer = window.setTimeout(
       () => setThrowState((current) => ({ ...current, rolling: false })),
       // 서버 시드마다 물리 궤적과 길이가 다르므로 그 던지기의 길이를 그대로 쓴다.
-      settleMsFor(currentAnimationSeed),
+      settleMsFor(currentAnimationSeed, [...currentStickKey].map((flag) => flag === "1")),
     );
     return () => window.clearTimeout(timer);
-  }, [currentAnimationSeed, throwState.eventId, throwState.rolling]);
+  }, [currentAnimationSeed, currentStickKey, throwState.eventId, throwState.rolling]);
 
   // 윷가락이 멎기 전에 결과를 글자로 알려 주면 굴러가는 윷을 볼 까닭이 없어진다.
   const resultText = animating
@@ -78,7 +87,7 @@ export function TurnPanel({
   return (
     <aside className="turn-panel" aria-labelledby="turn-panel-heading">
       <h2 id="turn-panel-heading">지금 할 일</h2>
-      <p className="turn-panel__guidance turn-panel__headline">{headlineFor(game, isCurrentPlayer, currentPlayerNickname)}</p>
+      <p className="turn-panel__guidance turn-panel__headline">{headlineFor(game, isCurrentPlayer, currentPlayerNickname, animating)}</p>
       <p className="turn-panel__current" role="status" aria-live="polite">현재 차례: <strong>{currentPlayerNickname}</strong></p>
       {game.turnStage === "AWAITING_THROW" && isCurrentPlayer && (
         // 던질 사람에게만 보인다. 남의 차례에 잠긴 버튼을 늘어놓으면 내가 뭘 해야 하는지 헷갈린다.
@@ -102,7 +111,8 @@ export function TurnPanel({
           animationSeed={currentAnimationSeed}
         />
       </section>
-      {game.pendingThrows.length > 0 && (
+      {/* 굴러가는 동안에는 손에 든 결과도 숨긴다. 칩이 먼저 보이면 무엇이 나왔는지 다 알게 된다. */}
+      {game.pendingThrows.length > 0 && !animating && (
         /* 무엇을 들고 있는지만 보여 준다. 어느 결과로 갈지는 판에서 갈 곳을 눌러 고른다. */
         <section className="pending-throws" aria-labelledby="pending-throws-heading">
           <h3 id="pending-throws-heading">쓸 수 있는 결과</h3>

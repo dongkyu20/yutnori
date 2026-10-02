@@ -341,7 +341,7 @@ export function YutSticks({ sticks, animating, throwKey, animationSeed }: YutSti
       };
 
       const pose = poseRef.current;
-      applyRest(stage.views, pose.flags, layoutFor(pose.animationSeed, stage.views.length));
+      applyRest(stage.views, pose.flags, layoutFor(pose.animationSeed, stage.views.length, pose.flags));
       resize();
       observer = new ResizeObserver(resize);
       observer.observe(canvas);
@@ -367,7 +367,7 @@ export function YutSticks({ sticks, animating, throwKey, animationSeed }: YutSti
     const stage = stageRef.current;
     if (!stage || stage.lost) return;
 
-    const layout = layoutFor(animationSeed, stage.views.length);
+    const layout = layoutFor(animationSeed, stage.views.length, flags);
     const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
     if (!animating || reduceMotion || tossRef.current.key === throwKey) {

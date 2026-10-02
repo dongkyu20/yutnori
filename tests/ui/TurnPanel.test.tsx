@@ -165,12 +165,46 @@ describe("TurnPanel", () => {
     );
     expect(screen.queryByText("던진 결과: 모")).not.toBeInTheDocument();
 
-    const settleMs = settleMsFor("seed-2");
+    // 모처럼 네 가락이 같은 면이면 마무리가 느려지므로 결과도 그만큼 늦게 나온다.
+    const settleMs = settleMsFor("seed-2", [true, true, true, true]);
     act(() => vi.advanceTimersByTime(settleMs - 50));
     expect(screen.queryByText("던진 결과: 모")).not.toBeInTheDocument();
 
     act(() => vi.advanceTimersByTime(50));
     expect(screen.getByText("던진 결과: 모")).toBeInTheDocument();
+  });
+
+  it("keeps the held results and the extra-throw hint hidden until the sticks land", () => {
+    vi.useFakeTimers();
+    const initial = createGame({
+      lastThrow: { eventId: "event-1", result: "DO", sticks: [true, false, false, false], animationSeed: "seed-1" },
+    });
+    const { rerender } = render(
+      <TurnPanel game={initial} currentPlayerNickname="민수" isCurrentPlayer onThrow={() => undefined} />,
+    );
+    const sticks: [boolean, boolean, boolean, boolean] = [false, false, false, false];
+    rerender(
+      <TurnPanel
+        game={{
+          ...initial,
+          turnStage: "AWAITING_THROW",
+          throwsRemaining: 1,
+          pendingThrows: [{ id: "event-2", result: "MO", legalPieceIds: [], moves: [] }],
+          lastThrow: { eventId: "event-2", result: "MO", sticks, animationSeed: "seed-3" },
+        }}
+        currentPlayerNickname="민수"
+        isCurrentPlayer
+        onThrow={() => undefined}
+      />,
+    );
+
+    // 굴러가는 동안 결과를 알려 주는 글은 모두 숨긴다.
+    expect(screen.queryByRole("list", { name: "쓸 수 있는 결과" })).not.toBeInTheDocument();
+    expect(screen.queryByText("윷이나 모가 나왔습니다. 한 번 더 던지세요")).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(settleMsFor("seed-3", sticks)));
+    expect(screen.getByRole("list", { name: "쓸 수 있는 결과" })).toHaveTextContent("모");
+    expect(screen.getByText("윷이나 모가 나왔습니다. 한 번 더 던지세요")).toBeInTheDocument();
   });
 
   it("shows the result at once for a player who asked for less motion", () => {

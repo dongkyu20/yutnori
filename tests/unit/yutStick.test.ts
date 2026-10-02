@@ -8,8 +8,11 @@ import {
   layoutFor,
   restHeight,
   rollHeight,
+  settleMsFor,
   settleMsOf,
   restRoll,
+  tossStyleFor,
+  TOSS_STYLES,
   tossLift,
   CONTENT,
   CUT_DEPTH,
@@ -264,12 +267,14 @@ describe("무작위 궤적 안전성", () => {
     const spots = PHYSICS_SEEDS.flatMap((seed) => layoutFor(seed, 4));
     spots.forEach((spot) => {
       expect(spot.delayMs).toBeGreaterThanOrEqual(0);
-      expect(spot.delayMs).toBeLessThanOrEqual(120);
-      expect(spot.tossMs).toBeGreaterThanOrEqual(600);
-      expect(spot.tossMs).toBeLessThanOrEqual(1_150);
-      expect(spot.lift).toBeGreaterThan(0.45);
-      expect(spot.lift).toBeLessThan(1.4);
-      expect(spot.touchdown).toBeGreaterThanOrEqual(0.55);
+      // 흩뿌리기는 가락마다 차례로 날리므로 마지막 가락이 0.33초쯤 늦다.
+      expect(spot.delayMs).toBeLessThanOrEqual(340);
+      expect(spot.tossMs).toBeGreaterThanOrEqual(570);
+      expect(spot.tossMs).toBeLessThanOrEqual(1_290);
+      // 낮게 굴리기는 낮게 날고 일찍 닿는다.
+      expect(spot.lift).toBeGreaterThan(0.25);
+      expect(spot.lift).toBeLessThan(1.37);
+      expect(spot.touchdown).toBeGreaterThanOrEqual(0.3);
       expect(spot.touchdown).toBeLessThanOrEqual(0.94);
     });
   });
@@ -387,3 +392,97 @@ describe("구도", () => {
     });
   });
 });
+
+describe("던지기 스타일과 극적인 순간", () => {
+  const STYLE_SEEDS = Array.from({ length: 240 }, (unusedValue, index) => `style-${index}`);
+  const MIXED = [true, false, true, false];
+  const YUT = [true, true, true, true];
+  const MO = [false, false, false, false];
+
+  it("시드마다 다섯 가지 던지기 스타일이 고루 나온다", () => {
+    const seen = new Map<string, number>();
+    STYLE_SEEDS.forEach((seed) => {
+      const style = tossStyleFor(seed);
+      seen.set(style, (seen.get(style) ?? 0) + 1);
+    });
+    expect([...seen.keys()].sort()).toEqual([...TOSS_STYLES].sort());
+    // 어느 하나가 거의 안 나오면 다양하다고 느끼지 못한다.
+    seen.forEach((count) => expect(count).toBeGreaterThan(STYLE_SEEDS.length * 0.1));
+  });
+
+  it("가끔 한 가락만 끝에 세워져 버티다 쓰러진다", () => {
+    const teeters = STYLE_SEEDS.map((seed) => layoutFor(seed, 4, MIXED).filter((spot) => spot.teeterMs > 0).length);
+    // 버틸 때는 늘 한 가락뿐이다.
+    teeters.forEach((count) => expect(count).toBeLessThanOrEqual(1));
+    const share = teeters.filter((count) => count === 1).length / STYLE_SEEDS.length;
+    expect(share).toBeGreaterThan(0.1);
+    expect(share).toBeLessThan(0.35);
+  });
+
+  it("버티는 가락은 내려앉는 순간 곧추서 있고, 다 버틴 뒤에는 결과 면으로 눕는다", () => {
+    const seed = STYLE_SEEDS.find((candidate) => layoutFor(candidate, 4, MIXED).some((spot) => spot.teeterMs > 0))!;
+    const layout = layoutFor(seed, 4, MIXED);
+    const index = layout.findIndex((spot) => spot.teeterMs > 0);
+    const spot = layout[index];
+    const views = makeViews(4);
+
+    applyToss(views, MIXED, layout, spot.delayMs + spot.durationMs - spot.teeterMs);
+    expect(views[index].rotation.z).toBeGreaterThan(1.1);
+
+    expect(applyToss(views, MIXED, layout, settleMsOf(layout))).toBe(false);
+    const rested = makeViews(4);
+    applyRest(rested, MIXED, layout);
+    expect(views[index].rotation.toArray()).toEqual(rested[index].rotation.toArray());
+    expect(views[index].position.toArray()).toEqual(rested[index].position.toArray());
+  });
+
+  it("윷이나 모가 나오면 내려앉기 직전을 느리게 보여 준다", () => {
+    STYLE_SEEDS.slice(0, 40).forEach((seed) => {
+      const normal = settleMsOf(layoutFor(seed, 4, MIXED));
+      // 나는 시간만 늘어난다. 버티는 시간은 그대로다.
+      expect(settleMsOf(layoutFor(seed, 4, YUT))).toBeGreaterThan(normal + 300);
+      expect(settleMsOf(layoutFor(seed, 4, MO))).toBeGreaterThan(normal + 300);
+    });
+    // 결과 글자를 미루는 시간도 결과를 알아야 맞는다.
+    expect(settleMsFor("slow-seed", YUT)).toBe(settleMsOf(layoutFor("slow-seed", 4, YUT)));
+    expect(settleMsFor("slow-seed", MIXED)).toBe(settleMsOf(layoutFor("slow-seed", 4, MIXED)));
+  });
+
+  it.each([
+    ["섞인 결과", MIXED],
+    ["윷", YUT],
+    ["모", MO],
+  ])("%s: 어느 스타일이든 결과 면으로 끝나고, 멍석을 뚫지 않고, 화면 밖으로 나가지 않는다", (label, flags) => {
+    const points = allVertices();
+    const cameras = [2.6, 1.1].map((aspect) => {
+      const camera = new THREE.PerspectiveCamera(FOV, aspect, 0.1, 100);
+      frameCamera(THREE, camera, aspect);
+      camera.updateMatrixWorld(true);
+      return camera;
+    });
+    STYLE_SEEDS.slice(0, 120).forEach((seed) => {
+      const layout = layoutFor(seed, 4, flags);
+      const views = makeViews(4);
+      const settle = settleMsOf(layout);
+      for (let elapsed = 0; elapsed <= settle; elapsed += 24) {
+        applyToss(views, flags, layout, elapsed);
+        views.forEach((group) => {
+          expect(minimumWorldY(group, points)).toBeGreaterThanOrEqual(-EPS);
+          cameras.forEach((camera) => {
+            const extent = maximumProjectedExtent(group, points, camera);
+            expect(extent.x).toBeLessThanOrEqual(1 + EPS);
+            expect(extent.y).toBeLessThanOrEqual(1 + EPS);
+          });
+        });
+      }
+      expect(applyToss(views, flags, layout, settle)).toBe(false);
+      const rested = makeViews(4);
+      applyRest(rested, flags, layout);
+      views.forEach((group, index) => {
+        expect(group.position.toArray()).toEqual(rested[index].position.toArray());
+        expect(group.rotation.toArray()).toEqual(rested[index].rotation.toArray());
+      });
+    });
+  });
+});
+

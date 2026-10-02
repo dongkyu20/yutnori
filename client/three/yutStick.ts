@@ -73,7 +73,34 @@ export interface StickLayout {
   bounces: number;
   /** 나는 시간 중 멍석에 닿는 지점. 이 뒤로는 굴러가며 멎는다. */
   touchdown: number;
+  /** 이 지점(나는 시간의 비율)부터 느리게 흐른다. 느려지지 않으면 1이다. */
+  slowFrom: number;
+  /** 느려진 구간이 몇 배로 늘어나는가. 1이면 그대로다. */
+  slowFactor: number;
+  /** 끝에 세워져 버티다 쓰러지는 시간. 버티지 않는 가락은 0이다. */
+  teeterMs: number;
+  /** 날기 시작해 완전히 멎을 때까지. 느린 구간과 버티는 시간을 모두 담는다. */
+  durationMs: number;
 }
+
+/**
+ * 던지는 손버릇. 시드로 하나를 고른다. 같은 손버릇 안에서도 값은 연속 범위에서 뽑는다.
+ * - classic: 위로 던져 몇 바퀴 돌고 앉는다.
+ * - high: 화면 끝까지 높이 떠 천천히 많이 돈다.
+ * - low: 낮게 날아 일찍 닿고 멍석 위를 길게 구른다.
+ * - scatter: 네 가락이 한쪽에서 차례로 날아와 흩어진다.
+ * - spin: 다 같이 한 방향으로 수평으로 빙글빙글 돈다.
+ */
+export const TOSS_STYLES = ["classic", "high", "low", "scatter", "spin"] as const;
+export type TossStyle = (typeof TOSS_STYLES)[number];
+
+/** 버티는 가락이 서 있는 각도. 곧추서기 조금 전이라 금방이라도 쓰러질 듯하다. */
+const STAND_ANGLE = 1.32;
+/** 던지기 가운데 한 가락이 버틸 확률. */
+const TEETER_CHANCE = 0.2;
+/** 윷·모일 때 느려지기 시작하는 지점과 늘어나는 배율. */
+const SLOW_FROM = 0.55;
+const SLOW_FACTOR = 2.4;
 
 function easeOutCubic(value: number): number {
   return 1 - (1 - value) ** 3;
@@ -141,50 +168,103 @@ function wholeBetween(random: () => number, minimum: number, maximum: number): n
   return Math.floor(between(random, minimum, maximum + 1));
 }
 
+function pickStyle(random: () => number): TossStyle {
+  return TOSS_STYLES[Math.min(TOSS_STYLES.length - 1, Math.floor(random() * TOSS_STYLES.length))];
+}
+
+/** 이 시드가 어떤 손버릇으로 던지는가. layoutFor가 맨 먼저 뽑는 값과 같다. */
+export function tossStyleFor(animationSeed: string): TossStyle {
+  return pickStyle(mulberry32(hash32(animationSeed)));
+}
+
+/** 네 가락이 모두 같은 면이면 윷이나 모다. 이때만 내려앉기 직전을 느리게 보여 준다. */
+function isYutOrMo(flags: readonly boolean[] | undefined, count: number): boolean {
+  if (!flags || flags.length < count) return false;
+  return flags.slice(0, count).every((flag) => flag === flags[0]);
+}
+
+/** 나는 데 실제로 걸리는 시간. 느린 구간만큼 늘어난다. */
+function flightMsOf(spot: Pick<StickLayout, "tossMs" | "slowFrom" | "slowFactor">): number {
+  return spot.tossMs * (spot.slowFrom + (1 - spot.slowFrom) * spot.slowFactor);
+}
+
+/** 흐른 시간을 나는 진행도(0~1)로 바꾼다. 느린 구간에서는 진행도가 천천히 오른다. */
+function flightProgress(spot: StickLayout, elapsedInFlight: number): number {
+  const fastMs = spot.tossMs * spot.slowFrom;
+  if (elapsedInFlight <= fastMs) return clamp01(elapsedInFlight / spot.tossMs);
+  return clamp01(spot.slowFrom + (elapsedInFlight - fastMs) / (spot.tossMs * spot.slowFactor));
+}
+
 /**
  * 서버가 보낸 시드로 매 가락의 초기 속도·회전·바운스를 직접 만든다.
- * 몇 개의 동작을 고르는 대신 모든 축을 연속 범위에서 뽑아 매번 다른 궤적이 나온다.
+ * 손버릇을 하나 고른 뒤, 그 안의 모든 축은 연속 범위에서 뽑아 매번 다른 궤적이 나온다.
+ * 결과(flags)를 주면 윷·모일 때 느린 마무리를 더한다. 모든 참가자가 같은 시드와 결과를
+ * 받으므로 연출도 똑같다.
  */
 export function layoutFor(
   animationSeed: string,
   count: number,
+  flags?: readonly boolean[],
 ): StickLayout[] {
   const random = mulberry32(hash32(animationSeed));
+  const style = pickStyle(random);
   const offset = ((count - 1) * ROW_GAP) / 2;
-  const sharedFlightMs = between(random, 700, 1_020);
-  const sharedLift = between(random, 0.58, 1.18);
+  const sharedFlightMs = style === "high"
+    ? between(random, 960, 1_150)
+    : style === "scatter" ? between(random, 650, 900) : between(random, 700, 1_020);
+  const sharedLift = style === "high"
+    ? between(random, 1.24, 1.3)
+    : style === "low" ? between(random, 0.32, 0.45) : between(random, 0.58, 1.18);
+  // 흩뿌릴 때는 네 가락이 한쪽에서 들어오고, 회오리는 다 같이 한 방향으로 돈다.
+  const side = random() < 0.5 ? -1 : 1;
+  const staggerMs = between(random, 80, 110);
+  const teeterIndex = random() < TEETER_CHANCE ? Math.floor(random() * count) : -1;
+  const slow = isYutOrMo(flags, count);
 
   return Array.from({ length: count }, (unusedValue, index) => {
-    return {
+    const spot: StickLayout = {
       x: between(random, -MAX_LANDING_X, MAX_LANDING_X),
       z: index * ROW_GAP - offset + between(random, -MAX_LANDING_Z_JITTER, MAX_LANDING_Z_JITTER),
       yaw: between(random, -0.28, 0.28),
       // 결과 면에 정확히 닿으려면 앞선 회전 수만 정수여야 한다.
-      turns: wholeBetween(random, 2, 6),
-      drift: between(random, -MAX_DRIFT_X, MAX_DRIFT_X),
-      delayMs: Math.round(between(random, 0, 120)),
+      turns: wholeBetween(random, style === "high" ? 4 : style === "low" ? 3 : 2, 6),
+      drift: style === "scatter"
+        ? side * between(random, 0.75, MAX_DRIFT_X)
+        : between(random, -MAX_DRIFT_X, MAX_DRIFT_X),
+      // 흩뿌리기는 들어오는 쪽에서 가까운 가락부터 차례로 날린다.
+      delayMs: style === "scatter"
+        ? Math.round((side > 0 ? count - 1 - index : index) * staggerMs)
+        : Math.round(between(random, 0, 120)),
       tossMs: Math.round(sharedFlightMs * between(random, 0.88, 1.12)),
-      lift: sharedLift * between(random, 0.84, 1.16),
-      bounce: between(random, 0.08, 0.34),
-      bounces: wholeBetween(random, 1, 3),
+      lift: sharedLift * (style === "high" ? between(random, 0.97, 1.05) : between(random, 0.84, 1.16)),
+      bounce: style === "low" ? between(random, 0.05, 0.12) : between(random, 0.08, 0.34),
+      bounces: style === "low" ? 1 : wholeBetween(random, 1, 3),
       // 일찍 닿은 뒤 남은 시간은 멍석 위에서 굴러 감속한다.
-      touchdown: between(random, 0.55, 0.94),
-      yawTurns: wholeBetween(random, -2, 2),
-      wobble: between(random, 0.08, 0.36),
-      driftZ: between(random, -MAX_DRIFT_Z, MAX_DRIFT_Z),
-      pitch: between(random, 0, 1),
+      touchdown: style === "low"
+        ? between(random, 0.32, 0.48)
+        : style === "high" ? between(random, 0.8, 0.94) : between(random, 0.55, 0.94),
+      yawTurns: style === "spin" ? side * wholeBetween(random, 2, 3) : wholeBetween(random, -2, 2),
+      wobble: style === "spin" ? between(random, 0.05, 0.12) : between(random, 0.08, 0.36),
+      driftZ: style === "scatter" ? between(random, -0.4, 0.4) : between(random, -MAX_DRIFT_Z, MAX_DRIFT_Z),
+      pitch: style === "spin" ? between(random, 0, 0.25) : between(random, 0, 1),
+      slowFrom: slow ? SLOW_FROM : 1,
+      slowFactor: slow ? SLOW_FACTOR : 1,
+      teeterMs: index === teeterIndex ? Math.round(between(random, 650, 900)) : 0,
+      durationMs: 0,
     };
+    spot.durationMs = Math.round(flightMsOf(spot)) + spot.teeterMs;
+    return spot;
   });
 }
 
 /** 이 던지기의 연출이 끝나는 때. 가장 늦게 멎는 가락에 맞춘다. */
 export function settleMsOf(layout: readonly StickLayout[]): number {
-  return layout.reduce((latest, spot) => Math.max(latest, spot.delayMs + spot.tossMs), 0);
+  return layout.reduce((latest, spot) => Math.max(latest, spot.delayMs + spot.durationMs), 0);
 }
 
-/** 서버 연출 시드만 알면 결과 글자를 언제 내보일지 계산할 수 있다. */
-export function settleMsFor(animationSeed: string): number {
-  return settleMsOf(layoutFor(animationSeed, STICK_COUNT));
+/** 서버 연출 시드와 결과를 알면 결과 글자를 언제 내보일지 계산할 수 있다. 윷·모는 느린 마무리만큼 늦다. */
+export function settleMsFor(animationSeed: string, flags?: readonly boolean[]): number {
+  return settleMsOf(layoutFor(animationSeed, STICK_COUNT, flags));
 }
 
 export interface StickGeometry {
@@ -285,6 +365,36 @@ export function applyRest(
 }
 
 /**
+ * 회전시킨 실제 형상이 멍석 위에 오도록 중심을 띄울 높이.
+ * 회전 행렬의 세계 Y행으로 가락의 보수적인 경계 상자를 투영한다.
+ * 중심점이 아니라 실제 형상 전체가 멍석 위에 오도록 필요한 높이를 구한다.
+ */
+function clearanceOf(group: Group): number {
+  const { x: qx, y: qy, z: qz, w: qw } = group.quaternion;
+  const axisX = 2 * (qx * qy + qw * qz);
+  const axisY = 1 - 2 * (qx * qx + qz * qz);
+  const axisZ = 2 * (qy * qz - qw * qx);
+  const lowestLocalY = -Math.abs(axisX) * (LENGTH / 2)
+    + axisY * (axisY >= 0 ? -CUT_DEPTH : RADIUS)
+    - Math.abs(axisZ) * RADIUS;
+  return -lowestLocalY;
+}
+
+/**
+ * 버티는 가락의 기울기. 처음 70%는 선 채로 흔들리고, 나머지에서 점점 빨리 쓰러진다.
+ * 끝에서 정확히 0이라 눕힌 자세와 어긋나지 않는다.
+ */
+function teeterTilt(progress: number): number {
+  const step = clamp01(progress);
+  if (step < 0.7) {
+    const sway = Math.sin((step / 0.7) * Math.PI * 5) * 0.14 * (1 - (step / 0.7) * 0.5);
+    return STAND_ANGLE + sway;
+  }
+  const fall = (step - 0.7) / 0.3;
+  return STAND_ANGLE * (1 - fall * fall);
+}
+
+/**
  * 목표 각도에서 정수 바퀴 앞선 지점부터 굴려 언제나 결과 면으로 멈춘다.
  * 다 내려앉았으면 false를 돌려준다.
  */
@@ -298,13 +408,26 @@ export function applyToss(
   views.forEach((group, index) => {
     const flat = flags[index] ?? false;
     const spot = layout[index];
-    const progress = clamp01((elapsed - spot.delayMs) / spot.tossMs);
+    const sinceStart = elapsed - spot.delayMs;
+    const flightMs = spot.durationMs - spot.teeterMs;
+
+    // 앉은 뒤 세워진 채 버티다 쓰러지는 구간. 다 쓰러지면 아래에서 눕힌 자세로 닫는다.
+    if (spot.teeterMs > 0 && sinceStart >= flightMs && sinceStart < spot.durationMs) {
+      group.rotation.set(restRoll(flat), spot.yaw, teeterTilt((sinceStart - flightMs) / spot.teeterMs));
+      group.position.set(spot.x, Math.max(clearanceOf(group), restHeight(flat)), spot.z);
+      running = true;
+      return;
+    }
+
+    const progress = sinceStart >= spot.durationMs ? 1 : sinceStart <= 0 ? 0 : flightProgress(spot, sinceStart);
     const eased = easeOutCubic(progress);
     const left = 1 - eased;
+    // 버틸 가락은 눕지 않고 선 채로 앉는다. 처음에는 0이라 눕힌 자세에서 출발한다.
+    const stand = spot.teeterMs > 0 && progress < 1 ? STAND_ANGLE * eased * eased : 0;
     // 곧추선 각도. 눕힌 자세에서 시작해 날면서 섰다가 앉으면서 다시 눕는다.
     // 처음부터 세워 두면 굴러가기 전에 선 윷이 한 번 번쩍인다.
     // 다 앉은 뒤에는 딱 0이어야 눕힌 자세와 어긋나지 않는다.
-    const tilt = progress >= 1 ? 0 : Math.sin(progress * Math.PI) * spot.pitch * (Math.PI / 2);
+    const tilt = progress >= 1 ? 0 : Math.sin(progress * Math.PI) * spot.pitch * (Math.PI / 2) + stand;
     const roll = restRoll(flat) - spot.turns * Math.PI * 2 * left;
     // 닿는 시점을 앞당기면 남은 시간은 멍석 위를 구르며 멎는 데 쓰인다.
     const airborne = spot.lift * LIFT * tossLift(progress / spot.touchdown, spot.bounce, spot.bounces);
@@ -314,16 +437,7 @@ export function applyToss(
       spot.yaw + left * (spot.drift * 0.7 + spot.yawTurns * Math.PI * 2),
       tilt + left * Math.sin(progress * Math.PI * 3) * spot.wobble,
     );
-    const { x: qx, y: qy, z: qz, w: qw } = group.quaternion;
-    // 회전 행렬의 세계 Y행으로 가락의 보수적인 경계 상자를 투영한다.
-    // 중심점이 아니라 실제 형상 전체가 멍석 위에 오도록 필요한 높이를 구한다.
-    const axisX = 2 * (qx * qy + qw * qz);
-    const axisY = 1 - 2 * (qx * qx + qz * qz);
-    const axisZ = 2 * (qy * qz - qw * qx);
-    const lowestLocalY = -Math.abs(axisX) * (LENGTH / 2)
-      + axisY * (axisY >= 0 ? -CUT_DEPTH : RADIUS)
-      - Math.abs(axisZ) * RADIUS;
-    const clearance = -lowestLocalY;
+    const clearance = clearanceOf(group);
     // 시작과 끝은 applyRest와 숫자까지 같은 값으로 닫고, 움직이는 동안만
     // 회전한 실제 형상의 여유 높이를 적용한다.
     const centerHeight = progress <= 0 || progress >= 1
