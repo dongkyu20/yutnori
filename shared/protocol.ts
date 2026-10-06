@@ -11,6 +11,8 @@ export type ClientCommand =
   | { type: "SHUFFLE_TEAMS"; roomVersion: number; requestId: string }
   /** 내 말 색을 고른다. 팀전에서는 팀에 먼저 들어온 사람이 팀 색을 정한다. */
   | { type: "CHOOSE_COLOR"; slot: number; roomVersion: number; requestId: string }
+  /** 팀 이름을 짓는다. 그 팀 사람과 방장만 할 수 있고, 빈 이름은 기본 이름으로 되돌린다. */
+  | { type: "SET_TEAM_NAME"; teamId: TeamId; name: string; roomVersion: number; requestId: string }
   | { type: "KICK_PLAYER"; playerId: string; roomVersion: number; requestId: string }
   /** 스스로 방을 떠난다. 진행 중인 판에서는 그 사람의 말도 함께 걷힌다. */
   | { type: "LEAVE_ROOM"; roomVersion: number; requestId: string }
@@ -76,6 +78,11 @@ export interface PublicRoomSnapshot {
     /** 고른 말 색 자리(0~3). 아직 아무도 고르지 않았으면 없다. 팀전은 팀원이 같은 값을 받는다. */
     colorSlot?: number;
   }>;
+  /**
+   * 팀이 직접 지은 이름. 짓지 않은 팀은 여기에 없고 화면에서는 "A팀"처럼 글자로 불린다.
+   * 팀전에서만 온다. 팀이 비면 그 이름도 함께 사라진다.
+   */
+  teamNames?: Partial<Record<TeamId, string>>;
   canStart: boolean;
   startEligibilityReason: string | null;
   game: PublicGameState | null;

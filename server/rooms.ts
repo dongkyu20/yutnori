@@ -32,6 +32,8 @@ const ROOM_ERROR_MESSAGES = {
   TEAM_LEADER_ONLY: "팀에 먼저 들어온 참가자만 팀 색을 고를 수 있습니다.",
   NO_TEAM: "팀을 먼저 배정받아야 색을 고를 수 있습니다.",
   INVALID_TEAM_SIZE: "4·6·8명일 때만 팀을 랜덤으로 나눌 수 있습니다.",
+  TEAM_NAME_FORBIDDEN: "그 팀의 참가자나 방장만 팀 이름을 지을 수 있습니다.",
+  TEAM_NAME_TAKEN: "다른 팀이 쓰고 있는 이름입니다.",
 } as const;
 
 /** 고를 수 있는 말 색의 개수. 클라이언트 팔레트와 같아야 한다. */
@@ -63,6 +65,8 @@ interface Room {
    * 미리 나눠 주면 넷이 다 모였을 때 모든 색이 잠겨 아무도 바꿀 수 없다.
    */
   colorChoices: Map<string, number>;
+  /** 팀이 직접 지은 이름. 짓지 않은 팀은 여기에 없고 글자로 불린다. 팀이 비면 지워진다. */
+  teamNames: Map<TeamId, string>;
   actionExpiresAt: number | null;
   actionTimerId: unknown | null;
   emptySince: number | null;
@@ -184,6 +188,7 @@ export class RoomService {
       players: [session.player],
       game: null,
       colorChoices: new Map(),
+      teamNames: new Map(),
       actionExpiresAt: null,
       actionTimerId: null,
       emptySince: null,
@@ -347,15 +352,19 @@ export class RoomService {
         this.assertWaiting(room);
         this.assertHost(room, actor.id);
         this.assignTeam(room, command.playerId, command.teamId);
-        // 옮기고 나서 빈 팀이 생겼으면 그 팀이 쥐고 있던 색을 놓아준다.
-        this.releaseOrphanedColors(room);
+        // 옮기고 나서 빈 팀이 생겼으면 그 팀이 쥐고 있던 색과 이름을 놓아준다.
+        this.releaseOrphanedTeamState(room);
         return;
       case "SHUFFLE_TEAMS":
         this.assertWaiting(room);
         this.assertHost(room, actor.id);
         this.shuffleTeams(room);
-        // 섞은 뒤 빈 팀이 생겼으면 그 팀이 쥐고 있던 색을 놓아준다.
-        this.releaseOrphanedColors(room);
+        // 섞은 뒤 빈 팀이 생겼으면 그 팀이 쥐고 있던 색과 이름을 놓아준다.
+        this.releaseOrphanedTeamState(room);
+        return;
+      case "SET_TEAM_NAME":
+        this.assertWaiting(room);
+        this.setTeamName(room, actor, command.teamId, command.name);
         return;
       case "LEAVE_ROOM":
         // 어느 단계에서든 나갈 수 있다. 진행 중이면 판에서도 빠진다.
@@ -485,7 +494,7 @@ export class RoomService {
     const [removed] = room.players.splice(index, 1);
     this.sessions.delete(removed.reconnectTokenHash);
     this.playerRooms.delete(removed.id);
-    this.releaseOrphanedColors(room);
+    this.releaseOrphanedTeamState(room);
     return removed;
   }
 
@@ -570,7 +579,9 @@ export class RoomService {
     room.winnerName = winnerId === null
       ? null
       : room.mode === "team"
-        ? `${winnerId}팀`
+        // 이긴 팀이 이름을 지었으면 그 이름으로 남긴다. 나중에 팀이 비어 이름이 지워져도
+        // 결과 문구는 그대로여야 하므로 여기서 한 번 박아 둔다.
+        ? room.teamNames.get(winnerId as TeamId) ?? `${winnerId}팀`
         : room.players.find((player) => player.id === winnerId)?.nickname ?? null;
     room.phase = "finished";
     room.finishedAt = this.options.now();
@@ -654,10 +665,35 @@ export class RoomService {
   }
 
   /**
-   * 주인이 사라진 색을 놓아준다. 내보내거나 팀을 옮겨 팀이 비면 그 색을 쥔 사람이 없어지는데,
-   * 그대로 두면 아무도 고를 수 없는 색이 되어 넷뿐인 색이 금방 바닥난다.
+   * 그 팀에게 이름을 지어 준다. 빈 이름은 지우라는 뜻이고, 그러면 다시 글자로 불린다.
+   * 남의 팀 이름을 마음대로 바꾸지 못하게 그 팀 사람과 방장에게만 연다.
    */
-  private releaseOrphanedColors(room: Room): void {
+  private setTeamName(room: Room, actor: RoomPlayer, teamId: TeamId, name: string): void {
+    if (room.mode !== "team") {
+      throw new RoomError("WRONG_MODE", "팀전에서만 팀 이름을 지을 수 있습니다.");
+    }
+    if (actor.teamId !== teamId && actor.id !== room.hostPlayerId) {
+      throw new RoomError("TEAM_NAME_FORBIDDEN", ROOM_ERROR_MESSAGES.TEAM_NAME_FORBIDDEN);
+    }
+    if (name === "") {
+      room.teamNames.delete(teamId);
+      return;
+    }
+    // 두 팀이 같은 이름이면 차례 안내도 결과도 어느 팀 이야기인지 알 수 없다.
+    for (const [holder, held] of room.teamNames) {
+      if (holder !== teamId && held === name) {
+        throw new RoomError("TEAM_NAME_TAKEN", ROOM_ERROR_MESSAGES.TEAM_NAME_TAKEN);
+      }
+    }
+    room.teamNames.set(teamId, name);
+  }
+
+  /**
+   * 주인이 사라진 색과 팀 이름을 놓아준다. 내보내거나 팀을 옮겨 팀이 비면 그것을 쥔 사람이
+   * 없어지는데, 색을 그대로 두면 아무도 고를 수 없는 색이 되어 넷뿐인 색이 금방 바닥나고,
+   * 이름을 그대로 두면 아무도 없는 팀이 남의 이름을 계속 붙들고 있게 된다.
+   */
+  private releaseOrphanedTeamState(room: Room): void {
     const held = new Set(
       room.players.flatMap((player) => {
         const controllerId = room.mode === "team" ? player.teamId : player.id;
@@ -666,6 +702,9 @@ export class RoomService {
     );
     for (const controllerId of [...room.colorChoices.keys()]) {
       if (!held.has(controllerId)) room.colorChoices.delete(controllerId);
+    }
+    for (const teamId of [...room.teamNames.keys()]) {
+      if (!held.has(teamId)) room.teamNames.delete(teamId);
     }
   }
 
@@ -807,6 +846,7 @@ export class RoomService {
           ...(colorSlot === undefined ? {} : { colorSlot }),
         };
       }),
+      ...(room.mode === "team" ? { teamNames: Object.fromEntries(room.teamNames) } : {}),
       game: room.game
         ? {
             ...toPublicGameState(room.game, room.phase === "playing" ? room.actionExpiresAt : null),

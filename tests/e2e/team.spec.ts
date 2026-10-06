@@ -59,7 +59,7 @@ test("eight isolated players fill teams A-D and share pieces in interleaved turn
       await waitForVersionAfter(players, before);
     }
     for (const teamId of ["A", "B", "C", "D"]) {
-      await expect(host.page.getByRole("region", { name: `팀 ${teamId}`, exact: true })).toContainText("2/2");
+      await expect(host.page.getByRole("region", { name: `${teamId}팀`, exact: true })).toContainText("2/2");
     }
     await expect(startButton).toBeDisabled();
 

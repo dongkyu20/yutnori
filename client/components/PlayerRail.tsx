@@ -2,6 +2,7 @@
 
 import type { TeamId } from "../../shared/protocol";
 import { SIDE_NAMES } from "../sideColor";
+import { teamLabel, type TeamNames } from "../teamName";
 
 export interface RailPlayer {
   id: string;
@@ -20,6 +21,8 @@ interface PlayerRailProps {
   /** 팀전인가. 팀 색은 팀에 먼저 들어온 사람이 정하므로 방장 권한과는 별개다. */
   isTeamMode: boolean;
   teamSizes: Record<TeamId, number>;
+  /** 팀이 지은 이름. 없는 팀은 글자로 부른다. */
+  teamNames?: TeamNames;
   onToggleReady: (player: RailPlayer) => void;
   onAssignTeam: (playerId: string, teamId: TeamId) => void;
   onChooseColor: (slot: number) => void;
@@ -44,6 +47,7 @@ function holderOf(
   player: RailPlayer,
   players: readonly RailPlayer[],
   isTeamMode: boolean,
+  teamNames: TeamNames,
 ): string | null {
   const mine = isTeamMode ? player.teamId : player.id;
   const holder = players.find((candidate) => {
@@ -51,7 +55,7 @@ function holderOf(
     return (isTeamMode ? candidate.teamId : candidate.id) !== mine;
   });
   if (!holder) return null;
-  return isTeamMode && holder.teamId ? `${holder.teamId}팀` : holder.nickname;
+  return isTeamMode && holder.teamId ? teamLabel(holder.teamId, teamNames) : holder.nickname;
 }
 
 export function PlayerRail({
@@ -61,6 +65,7 @@ export function PlayerRail({
   showTeamControls,
   isTeamMode,
   teamSizes,
+  teamNames,
   onToggleReady,
   onAssignTeam,
   onChooseColor,
@@ -101,9 +106,9 @@ export function PlayerRail({
             )}
             {isCurrentPlayer && canChooseColor(player, players, isTeamMode) && (
               <fieldset className="player-rail__colors">
-                <legend>{isTeamMode ? `${player.teamId}팀 말 색` : "내 말 색"}</legend>
+                <legend>{isTeamMode && player.teamId ? `${teamLabel(player.teamId, teamNames)} 말 색` : "내 말 색"}</legend>
                 {SIDE_NAMES.map((name, slot) => {
-                  const holder = holderOf(slot, player, players, isTeamMode);
+                  const holder = holderOf(slot, player, players, isTeamMode, teamNames);
                   return (
                     <button
                       key={name}
@@ -139,7 +144,7 @@ export function PlayerRail({
                       value={teamId}
                       disabled={teamSizes[teamId] >= 2 && player.teamId !== teamId}
                     >
-                      팀 {teamId}
+                      {teamLabel(teamId, teamNames)}
                     </option>
                   ))}
                 </select>

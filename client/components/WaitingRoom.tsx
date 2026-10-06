@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { InRoomCommand, PublicRoomSnapshot, ServerError, TeamId } from "../../shared/protocol";
 import { inviteUrl } from "../invite";
 import { newRequestId } from "../requestId";
+import { teamLabel } from "../teamName";
 import { PlayerRail } from "./PlayerRail";
 import { RoomAlert } from "./RoomAlert";
 
@@ -54,6 +55,8 @@ export function WaitingRoom({
 
   const metadata = () => ({ roomVersion: snapshot.version, requestId: newRequestId() });
   const canShuffle = SHUFFLE_SIZES.includes(snapshot.players.length);
+  // 내 팀은 내가 짓는다. 방장은 어느 팀이든 고칠 수 있다. 서버 규칙과 같다.
+  const myTeamId = snapshot.players.find((player) => player.id === playerId)?.teamId;
 
   const copy = async (kind: CopyKind): Promise<void> => {
     try {
@@ -85,6 +88,7 @@ export function WaitingRoom({
       onAssignTeam={(targetPlayerId, teamId) => sendCommand({
         type: "ASSIGN_TEAM", playerId: targetPlayerId, teamId, ...metadata(),
       })}
+      teamNames={snapshot.teamNames}
       onChooseColor={(slot) => sendCommand({ type: "CHOOSE_COLOR", slot, ...metadata() })}
       onKick={(player) => kick(player.id, player.nickname)}
     />
@@ -128,10 +132,38 @@ export function WaitingRoom({
         <section className="waiting-room__teams" aria-label="팀 구성">
           {TEAM_IDS.map((teamId) => {
             const members = snapshot.players.filter((player) => player.teamId === teamId);
+            const name = snapshot.teamNames?.[teamId] ?? "";
+            const label = teamLabel(teamId, snapshot.teamNames);
             return (
-              <section key={teamId} className="waiting-room__team-card" aria-label={`팀 ${teamId}`}>
-                <h2>팀 {teamId}</h2>
+              <section key={teamId} className="waiting-room__team-card" aria-label={label}>
+                <h2>{label}</h2>
                 <p>{members.length}/2</p>
+                {(isHost || myTeamId === teamId) && (
+                  <form
+                    className="team-name"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const field = event.currentTarget.elements.namedItem("teamName");
+                      if (field instanceof HTMLInputElement) {
+                        sendCommand({ type: "SET_TEAM_NAME", teamId, name: field.value, ...metadata() });
+                      }
+                    }}
+                  >
+                    {/* 서버가 보낸 이름이 바뀌면 key가 바뀌어 입력칸이 새로 선다.
+                        값을 따로 붙들지 않아도 남이 바꾼 이름이 그대로 비친다. */}
+                    <input
+                      key={name}
+                      id={`team-name-${teamId}`}
+                      name="teamName"
+                      className="team-name__input"
+                      defaultValue={name}
+                      maxLength={12}
+                      placeholder={`${teamId}팀`}
+                      aria-label={`${label} 이름`}
+                    />
+                    <button className="team-name__save" type="submit" aria-label={`${label} 이름 정하기`}>정하기</button>
+                  </form>
+                )}
                 {renderPlayers(members)}
               </section>
             );

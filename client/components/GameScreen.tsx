@@ -6,6 +6,7 @@ import type { ConnectionState } from "../useGameSession";
 import { inviteUrl } from "../invite";
 import { newRequestId } from "../requestId";
 import { sideClass, sideName, sideSlotOf, sideSlots } from "../sideColor";
+import { teamLabel } from "../teamName";
 import { EmojiReactions, type ReactionEvent } from "./EmojiReactions";
 import { EventAnnouncer } from "./EventAnnouncer";
 import { ResultDialog } from "./ResultDialog";
@@ -151,7 +152,7 @@ export function GameScreen({
             >
               <strong>{player.nickname}</strong>
               {player.id === playerId && <span className="game-player__me">나</span>}
-              {player.teamId && <span className="game-player__meta">{player.teamId}팀</span>}
+              {player.teamId && <span className="game-player__meta">{teamLabel(player.teamId, snapshot.teamNames)}</span>}
               {sideName(slot) && <span className="game-player__meta">{sideName(slot)} 말</span>}
               <span className="game-player__meta">대기 {counts.home} · 완주 {counts.finished}</span>
               {player.connected
@@ -169,6 +170,7 @@ export function GameScreen({
             game={game}
             players={snapshot.players}
             playerId={playerId}
+            teamNames={snapshot.teamNames}
             legalPieceIds={game.legalPieceIds}
             onSelectMove={(throwId, pieceId) => {
               sendCommand({ type: "SELECT_PIECE", throwId, pieceId, ...metadata() });

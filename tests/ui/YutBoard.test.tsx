@@ -94,8 +94,8 @@ describe("YutBoard", () => {
       ["D4_1", "O0"],
     ]);
     // 두 지름길은 방에서 교차하는 대각선이므로 D4는 O10과 O0을 잇는 선 위에 있어야 한다.
-    expect(screen.getByTestId("board-node-D4_1")).toHaveAttribute("data-node-y", "75");
-    expect(screen.getByTestId("board-node-D4_1")).toHaveAttribute("data-node-x", "75");
+    expect(screen.getByTestId("board-node-D4_1")).toHaveAttribute("data-node-y", "78");
+    expect(screen.getByTestId("board-node-D4_1")).toHaveAttribute("data-node-x", "78");
     expect(screen.queryByTestId("board-segment-center-b-D4_1-O15")).not.toBeInTheDocument();
   });
 
@@ -463,10 +463,10 @@ describe("YutBoard", () => {
     });
 
     // 두 지름길은 방에서 교차하고, 참으로 가는 길은 시작점 모서리로 내려온다.
-    expect(at("D1_2")).toEqual([58, 42]);
-    expect(at("D3_2")).toEqual([42, 42]);
+    expect(at("D1_2")).toEqual([64, 36]);
+    expect(at("D3_2")).toEqual([36, 36]);
     expect(at("CENTER")).toEqual([50, 50]);
-    expect(at("D4_1")).toEqual([75, 75]);
+    expect(at("D4_1")).toEqual([78, 78]);
   });
 
   it("gives each individual player its own piece colour", () => {

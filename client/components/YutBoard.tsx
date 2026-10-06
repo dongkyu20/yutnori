@@ -3,6 +3,7 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import type { PublicGameState, PublicRoomSnapshot, TeamId } from "../../shared/protocol";
 import { sideClass, sideSlotOf, sideSlots } from "../sideColor";
+import { shortTeamLabel, teamLabel, type TeamNames } from "../teamName";
 import {
   BOARD_SEGMENTS,
   CENTER_NODE_ID,
@@ -42,6 +43,8 @@ interface YutBoardProps {
   onSelectRoute: (routeId: string) => void;
   /** 지금 연출 중인 말. 이 말의 글자는 3D 말과 어긋나므로 감춘다. */
   animatingPieceIds?: readonly string[];
+  /** 팀이 지은 이름. 없는 팀은 글자로 부른다. */
+  teamNames?: TeamNames;
 }
 
 /** 고른 말이 결과 하나로 갈 수 있는 곳. 판 위에 버튼 하나로 뜬다. */
@@ -220,8 +223,12 @@ function shortName(name: string): string {
   return [...name].slice(0, 2).join("");
 }
 
-function controllerName(group: PieceGroup, players: PublicRoomSnapshot["players"]): string {
-  if (group.teamId) return `${group.teamId}팀`;
+function controllerName(
+  group: PieceGroup,
+  players: PublicRoomSnapshot["players"],
+  teamNames: TeamNames,
+): string {
+  if (group.teamId) return teamLabel(group.teamId, teamNames);
   return players.find((player) => player.id === group.controllerId)?.nickname ?? group.controllerId;
 }
 
@@ -243,6 +250,7 @@ export function YutBoard({
   onSelectMove,
   onSelectRoute,
   animatingPieceIds = [],
+  teamNames,
 }: YutBoardProps) {
   const isCurrentPlayer = playerId === game.currentPlayerId;
   const legalPieces = new Set(legalPieceIds);
@@ -276,7 +284,7 @@ export function YutBoard({
   const renderPiece = (group: PieceGroup) => {
     const legalPieceId = group.pieces.find((piece) => legalPieces.has(piece.id))?.id;
     const count = Math.max(group.pieces.length, group.pieces[0]?.stackSize ?? 1);
-    const label = `${controllerName(group, players)} 말 ${count}개 ${groupLocation(group)}`;
+    const label = `${controllerName(group, players, teamNames)} 말 ${count}개 ${groupLocation(group)}`;
     const enabled = Boolean(choosable && legalPieceId);
     const chosen = Boolean(legalPieceId && legalPieceId === activePieceId);
     const slot = sideSlotOf(slots, { teamId: group.teamId, ownerId: group.controllerId });
@@ -308,7 +316,9 @@ export function YutBoard({
         onFocus={() => { if (enabled && legalPieceId) setPreviewPieceId(legalPieceId); }}
         onBlur={() => setPreviewPieceId(null)}
       >
-        <span className="yut-piece__team">{group.teamId ?? shortName(controllerName(group, players))}</span>
+        <span className="yut-piece__team">
+          {group.teamId ? shortTeamLabel(group.teamId, teamNames) : shortName(controllerName(group, players, teamNames))}
+        </span>
         <span className="yut-piece__count"> ×{count}</span>
       </button>
     );

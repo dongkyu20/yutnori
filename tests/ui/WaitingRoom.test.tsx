@@ -48,6 +48,57 @@ describe("WaitingRoom", () => {
     vi.unstubAllGlobals();
   });
 
+  it("lets a team name itself and calls every team by that name", async () => {
+    const user = userEvent.setup();
+    const teamSnapshot = createSnapshot({
+      mode: "team",
+      canStart: false,
+      startEligibilityReason: "각 팀에 2명이 필요합니다.",
+      players: [
+        { id: "host", nickname: "Host", connected: true, ready: false, teamId: "A" },
+        { id: "guest", nickname: "Guest", connected: true, ready: false, teamId: "B" },
+      ],
+      teamNames: { B: "범 내려온다" },
+    });
+    // Guest는 B팀 사람이라 자기 팀만 고칠 수 있다. 방장이 아니므로 A팀 칸은 없다.
+    const { commands } = renderWaitingRoom(teamSnapshot, "guest");
+
+    // 이름을 지은 팀은 글자 대신 그 이름으로 불린다.
+    expect(screen.getByRole("region", { name: "범 내려온다" })).toHaveTextContent("Guest");
+    expect(screen.getByRole("region", { name: "A팀" })).toHaveTextContent("Host");
+    expect(screen.queryByLabelText("A팀 이름")).not.toBeInTheDocument();
+
+    const field = screen.getByLabelText("범 내려온다 이름");
+    expect(field).toHaveValue("범 내려온다");
+    await user.clear(field);
+    await user.type(field, "윷가락 2조");
+    await user.click(screen.getByRole("button", { name: "범 내려온다 이름 정하기" }));
+
+    expect(commands).toEqual([{
+      type: "SET_TEAM_NAME",
+      teamId: "B",
+      name: "윷가락 2조",
+      roomVersion: 7,
+      requestId: expect.any(String),
+    }]);
+  });
+
+  it("lets the host rename any team", () => {
+    renderWaitingRoom(createSnapshot({
+      mode: "team",
+      canStart: false,
+      startEligibilityReason: "각 팀에 2명이 필요합니다.",
+      players: [{ id: "host", nickname: "Host", connected: true, ready: false, teamId: "A" }],
+    }), "host");
+
+    // 방장은 자기 팀이 아닌 팀도 고칠 수 있다. 아직 이름이 없으면 글자가 빈 칸의 안내로 선다.
+    for (const teamId of ["A", "B", "C", "D"]) {
+      const field = screen.getByLabelText(`${teamId}팀 이름`);
+      expect(field).toHaveValue("");
+      expect(field).toHaveAttribute("placeholder", `${teamId}팀`);
+    }
+  });
+
   it("shows why the server refused a command, and nothing when it refused none", () => {
     // 거절 사유를 서버만 알고 화면은 조용하면, 색을 고른 사람은 눌러도 아무 일도
     // 일어나지 않는 것으로 본다. 무엇을 다시 해야 하는지 알 길이 없다.
@@ -149,9 +200,9 @@ describe("WaitingRoom", () => {
     }));
 
     for (const teamId of ["A", "B", "C", "D"]) {
-      expect(screen.getByRole("region", { name: `팀 ${teamId}` })).toHaveTextContent(teamId === "A" ? "1/2" : "0/2");
+      expect(screen.getByRole("region", { name: `${teamId}팀` })).toHaveTextContent(teamId === "A" ? "1/2" : "0/2");
     }
-    expect(screen.getByRole("region", { name: "팀 A" })).toHaveTextContent("Host");
+    expect(screen.getByRole("region", { name: "A팀" })).toHaveTextContent("Host");
     await user.selectOptions(screen.getByLabelText("Guest 팀 배정"), "B");
     expect(commands).toEqual([
       {
@@ -216,7 +267,7 @@ describe("WaitingRoom", () => {
     const taken = screen.getByRole("button", { name: "청록, Guest이(가) 쓰는 색" });
     expect(taken).toBeDisabled();
 
-    await user.click(screen.getByRole("button", { name: "치자 고르기" }));
+    await user.click(screen.getByRole("button", { name: "보라 고르기" }));
 
     expect(commands).toEqual([
       { type: "CHOOSE_COLOR", slot: 2, roomVersion: 7, requestId: expect.any(String) },

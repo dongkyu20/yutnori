@@ -4,7 +4,6 @@
  */
 import {
   BOARD_SEGMENTS,
-  CENTER_NODE_ID,
   FIRST_STEP_NODE_ID,
   NODE_COORDINATES,
   SHORTCUT_GATES,
@@ -20,6 +19,15 @@ const BOARD_THICKNESS = 0.35;
 // 칸이 판을 너무 채워 답답해 보여 처음(0.062)보다 15% 줄였다. 말(0.042)은 여전히 칸 안에 앉는다.
 const NODE_RADIUS = 0.0527 * BOARD_WORLD_SIZE;
 const NODE_HEIGHT = 0.05;
+/** 칸을 두르는 테. 반지름은 고리의 한가운데를, 굵기는 그 관의 반지름을 가리킨다. */
+const NODE_RIM_RADIUS = NODE_RADIUS * 1.12;
+const NODE_RIM_TUBE = NODE_RADIUS * 0.13;
+/**
+ * 칸 하나가 판에서 차지하는 반지름. 테 바깥까지다.
+ * 두 칸이 이것의 두 배보다 가까우면 테끼리 서로를 파고들어 동그라미가 잘려 보인다.
+ * boardLayout의 좌표가 이 간격을 지키는지는 tests/unit/boardScene.test.ts가 지킨다.
+ */
+export const NODE_OUTER_RADIUS = NODE_RIM_RADIUS + NODE_RIM_TUBE;
 const PATH_WIDTH = 0.022 * BOARD_WORLD_SIZE;
 
 /**
@@ -117,6 +125,7 @@ function addPaths(
 
 /**
  * 칸. 출발점은 주홍, 길목과 방은 금색으로 두른다. DOM CSS가 하던 강조를 그대로 옮긴다.
+ * 강조는 테두리만 맡는다. 몸은 어느 칸이든 같은 황토색이라 방만 혼자 금빛 원이 되지 않는다.
  * 평범한 칸도 판(한지색)과 섞이지 않도록 진한 황토색 몸에 먹색 테를 두른다.
  */
 function addNodes(
@@ -131,7 +140,7 @@ function addNodes(
   disposables.push(plain, rim, start, gate);
 
   const disc = new THREE.CylinderGeometry(NODE_RADIUS, NODE_RADIUS * 0.94, NODE_HEIGHT, 28);
-  const ring = new THREE.TorusGeometry(NODE_RADIUS * 1.12, NODE_RADIUS * 0.13, 10, 30)
+  const ring = new THREE.TorusGeometry(NODE_RIM_RADIUS, NODE_RIM_TUBE, 10, 30)
     .rotateX(Math.PI / 2);
   disposables.push(disc, ring);
 
@@ -140,7 +149,7 @@ function addNodes(
     const at = nodeWorldPosition(nodeId);
     const isStart = nodeId === START_NODE_ID;
     const isGate = SHORTCUT_GATES[nodeId] !== undefined;
-    const body = new THREE.Mesh(disc, isGate && nodeId === CENTER_NODE_ID ? gate : plain);
+    const body = new THREE.Mesh(disc, plain);
     body.position.set(at.x, NODE_HEIGHT / 2, at.z);
     body.castShadow = true;
     body.receiveShadow = true;
