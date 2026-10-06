@@ -5,7 +5,7 @@ import type { TeamId } from "../shared/protocol";
  * 윷판과 참가자 목록이 같은 계산을 쓰므로 어느 색이 내 말인지 바로 읽힌다.
  */
 export const SIDE_COUNT = 4;
-export const SIDE_NAMES = ["주홍", "청록", "치자", "먹"] as const;
+export const SIDE_NAMES = ["주홍", "청록", "보라", "먹"] as const;
 
 export interface SideColor {
   /** 밝은 쪽. 무늬의 넓은 띠. */
@@ -21,7 +21,9 @@ export interface SideColor {
 export const SIDE_COLORS: readonly SideColor[] = Object.freeze([
   { base: 0xc84a35, deep: 0x782718 },
   { base: 0x147d73, deep: 0x084841 },
-  { base: 0xd5a62d, deep: 0x76590d },
+  // 보라. 예전에는 치자(금색)였으나 윷판의 길목·방 테두리가 같은 금색이라
+  // 그 칸에 올라선 말이 테에 묻혔다. 주홍·청록·먹 어느 것과도 멀다.
+  { base: 0x7a4fa3, deep: 0x442460 },
   { base: 0x606966, deep: 0x1f2724 },
 ]);
 

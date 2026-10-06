@@ -7,6 +7,7 @@ import {
   nodeWorldPosition,
   shockwaveAt,
   BOARD_WORLD_SIZE,
+  NODE_OUTER_RADIUS,
   SHOCKWAVE_INNER_RADIUS,
   SHOCKWAVE_MAX_RADIUS,
   SHOCKWAVE_OUTER_RADIUS,
@@ -36,6 +37,21 @@ describe("3D 윷판", () => {
       expect(ndc.x).toBeCloseTo((percent.x - 50) / 50, 10);
       expect(ndc.y).toBeCloseTo(-(percent.y - 50) / 50, 10);
     });
+  });
+
+  it("never lets one node's rim cut into another's", () => {
+    // 칸은 테까지 한 덩어리 동그라미다. 이웃이 지름보다 가까우면 테가 서로를 가로질러
+    // 그 칸만 잘린 동그라미가 된다. 방 둘레에서 실제로 그런 적이 있다.
+    const nodeIds = Object.keys(NODE_COORDINATES);
+    const touching = nodeIds.flatMap((nodeId, index) => {
+      const from = nodeWorldPosition(nodeId);
+      return nodeIds.slice(index + 1).flatMap((otherId) => {
+        const to = nodeWorldPosition(otherId);
+        const gap = Math.hypot(to.x - from.x, to.z - from.z);
+        return gap < NODE_OUTER_RADIUS * 2 ? [`${nodeId}↔${otherId}`] : [];
+      });
+    });
+    expect(touching).toEqual([]);
   });
 
   it("looks straight down so nothing shifts with height", () => {

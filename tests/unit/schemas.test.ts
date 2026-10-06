@@ -46,4 +46,26 @@ describe("guest inputs", () => {
     expect(parseClientCommand(base).success).toBe(true);
     expect(parseClientCommand({ ...base, seed: 1 }).success).toBe(false);
   });
+
+  it("takes a team name with digits and inner spaces but no symbols", () => {
+    const base = { type: "SET_TEAM_NAME", teamId: "A", roomVersion: 3, requestId: "00000000-0000-4000-8000-000000000003" };
+    const nameOf = (name: string) => {
+      const parsed = parseClientCommand({ ...base, name });
+      return parsed.success && parsed.data.type === "SET_TEAM_NAME" ? parsed.data.name : null;
+    };
+
+    // 팀 이름은 "2조"처럼 숫자로 부르고 "범 내려온다"처럼 띄어 쓰는 일이 흔하다.
+    expect(nameOf("윷가락 2조")).toBe("윷가락 2조");
+    expect(nameOf("Team B")).toBe("Team B");
+    // 앞뒤 공백과 거듭된 공백은 닉네임과 같은 방식으로 다듬는다.
+    expect(nameOf("  범   내려온다  ")).toBe("범 내려온다");
+    // 빈 이름은 이름을 지우라는 뜻이라 통과시킨다.
+    expect(nameOf("")).toBe("");
+
+    expect(nameOf("팀@A")).toBeNull();
+    expect(nameOf("🔥불꽃")).toBeNull();
+    expect(nameOf("열세글자짜리이름입니다")).toBe("열세글자짜리이름입니다");
+    expect(nameOf("열세글자를넘기는아주긴이름")).toBeNull();
+    expect(parseClientCommand({ ...base, name: "좋은이름", extra: 1 }).success).toBe(false);
+  });
 });

@@ -6,6 +6,7 @@
   --jade: #147D73;
   --vermilion: #C84A35;
   --gold: #D5A62D;
+  --violet: #7A4FA3;
   --paper: #FFF9EB;
   --muted-ink: #59625E;
   --background: var(--hanji);
@@ -245,6 +246,11 @@ button, input, select, textarea { min-height: 44px; }
 .waiting-room > .player-rail,
 .waiting-room__team-card .player-rail { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .75rem; margin: 0; padding: 0; list-style: none; }
 .waiting-room__team-card .player-rail { grid-template-columns: minmax(0, 1fr); }
+/* 팀 이름 짓기. 그 팀 사람과 방장에게만 보인다. 비워서 내면 다시 글자로 불린다. */
+.team-name { display: flex; gap: .5rem; }
+.team-name__input { flex: 1; min-width: 0; border: 2px solid rgb(31 39 36 / 22%); border-radius: .6rem; background: var(--paper); padding: .5rem .6rem; color: var(--ink); font-weight: 800; }
+.team-name__input::placeholder { color: color-mix(in srgb, var(--muted-ink) 70%, white); font-weight: 400; }
+.team-name__save { border: 2px solid var(--ink); border-radius: .6rem; background: var(--paper); padding: .5rem .8rem; color: var(--ink); font-weight: 900; white-space: nowrap; cursor: pointer; }
 .waiting-room__footer { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 .waiting-room__footer h2 { grid-column: 1 / -1; }
 .waiting-room__footer .waiting-room__action { width: auto; min-width: 12rem; }
@@ -317,7 +323,7 @@ button, input, select, textarea { min-height: 44px; }
 /* 편 색: 팀전은 A~D, 개인전은 참가 순서가 같은 자리를 쓴다. 윷판의 말과 짝을 맞춘다. */
 .game-player--side-0 { border-left-color: var(--vermilion); background: repeating-linear-gradient(45deg, var(--paper) 0 9px, #F6D9CF 9px 12px); }
 .game-player--side-1 { border-left-color: var(--jade); background: repeating-linear-gradient(-45deg, var(--paper) 0 8px, #CCE4DF 8px 12px); }
-.game-player--side-2 { border-left-color: var(--gold); background: radial-gradient(circle at 4px 4px, var(--gold) 1.5px, var(--paper) 1.7px) 0 0 / 10px 10px; }
+.game-player--side-2 { border-left-color: var(--violet); background: radial-gradient(circle at 4px 4px, var(--violet) 1.5px, var(--paper) 1.7px) 0 0 / 10px 10px; }
 .game-player--side-3 { border-left-color: var(--ink); background: repeating-linear-gradient(90deg, var(--paper) 0 8px, #D5D9D7 8px 11px); }
 
 /* 대기실 참가자 목록 — 준비 버튼을 실제 버튼처럼 보이게 한다. */
@@ -359,7 +365,7 @@ button, input, select, textarea { min-height: 44px; }
 .player-rail__color:disabled { opacity: .3; cursor: not-allowed; }
 .player-rail__color--side-0 { background: repeating-linear-gradient(45deg, #C84A35 0 7px, #782718 7px 14px); }
 .player-rail__color--side-1 { background: repeating-linear-gradient(-45deg, #147D73 0 7px, #084841 7px 14px); }
-.player-rail__color--side-2 { background: repeating-radial-gradient(circle, #D5A62D 0 4px, #76590D 5px 9px); }
+.player-rail__color--side-2 { background: repeating-radial-gradient(circle, #7A4FA3 0 4px, #442460 5px 9px); }
 .player-rail__color--side-3 { background: repeating-linear-gradient(90deg, #606966 0 6px, #1F2724 6px 12px); }
 
 .yut-board { display: grid; gap: clamp(.8rem, 1.6vw, 1.25rem); border: 1px solid rgb(31 39 36 / 30%); border-radius: 1rem; background: var(--paper); padding: clamp(.75rem, 2vw, 1.5rem); box-shadow: 0 16px 40px rgb(31 39 36 / 10%); }
@@ -420,14 +426,8 @@ button, input, select, textarea { min-height: 44px; }
 .yut-board__node--gate::after {
   transform: translate(-50%, -50%) rotate(var(--gate-angle)) translateX(1.52rem);
 }
-.yut-board__node--center { width: 2rem; background: var(--gold); }
-/* 방은 고리가 커서 살촉을 조금 더 밖으로 밀어낸다. */
-.yut-board__node--center::before {
-  transform: translate(-50%, -50%) rotate(var(--gate-angle)) translateX(1.32rem);
-}
-.yut-board__node--center::after {
-  transform: translate(-50%, -50%) rotate(var(--gate-angle)) translateX(1.7rem);
-}
+/* 방도 다른 길목과 같은 동그라미다. 혼자 크고 금빛으로 차 있으면 판에서 저만 튄다.
+   구분은 --gate가 두르는 금색 고리와 살촉이 이미 맡고 있다. */
 .yut-board__pieces { position: absolute; inset: 0; }
 /* 편 색을 아직 모를 때도 흰 글씨가 읽히도록 바탕색을 깔아 둔다. */
 /* 크기를 못 박아 둔다. 이름 길이에 따라 늘어나면 한쪽 편 말만 타원이 된다. */
@@ -436,7 +436,7 @@ button, input, select, textarea { min-height: 44px; }
 /* 색만으로 구분하지 않도록 편마다 무늬 방향까지 다르게 준다. */
 .yut-piece--side-0 { background: repeating-linear-gradient(45deg, #C84A35 0 7px, #782718 7px 14px); }
 .yut-piece--side-1 { background: repeating-linear-gradient(-45deg, #147D73 0 7px, #084841 7px 14px); }
-.yut-piece--side-2 { background: repeating-radial-gradient(circle, #D5A62D 0 4px, #76590D 5px 9px); }
+.yut-piece--side-2 { background: repeating-radial-gradient(circle, #7A4FA3 0 4px, #442460 5px 9px); }
 .yut-piece--side-3 { background: repeating-linear-gradient(90deg, #606966 0 6px, #1F2724 6px 12px); }
 .yut-piece:disabled { cursor: default; opacity: .68; filter: grayscale(.25); }
 .yut-piece__team, .yut-piece__count { display: block; line-height: 1.05; }

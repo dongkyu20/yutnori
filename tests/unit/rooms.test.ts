@@ -1238,6 +1238,94 @@ describe("team shuffle", () => {
   });
 });
 
+describe("team names", () => {
+  const assignPairs = (service: RoomService, sessions: ReturnType<typeof createPlayers>) => {
+    let snapshot = sessions.at(-1)!.snapshot;
+    const teams = ["A", "A", "B", "B"] as const;
+    sessions.forEach((session, index) => {
+      snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+        type: "ASSIGN_TEAM", playerId: session.playerId, teamId: teams[index],
+      });
+    });
+    return snapshot;
+  };
+
+  const teamRoom = () => {
+    const service = new RoomService(new FakeClock().options(sequenceRandom(11)));
+    const sessions = createPlayers(service, "team", ["Host", "Bora", "Chan", "Dami"]);
+    return { service, sessions, snapshot: assignPairs(service, sessions) };
+  };
+
+  it("lets a member name their own team and the host name any team", () => {
+    const { service, sessions, snapshot: start } = teamRoom();
+    // Bora는 A팀 사람이므로 A팀 이름을 짓는다. 팀에 먼저 들어온 사람일 필요는 없다.
+    let snapshot = dispatch(service, sessions[1].playerId, start, {
+      type: "SET_TEAM_NAME", teamId: "A", name: "범 내려온다",
+    });
+    expect(snapshot.teamNames).toEqual({ A: "범 내려온다" });
+
+    // 방장은 자기 팀이 아닌 B팀 이름도 고칠 수 있다.
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+      type: "SET_TEAM_NAME", teamId: "B", name: "윷가락 2조",
+    });
+    expect(snapshot.teamNames).toEqual({ A: "범 내려온다", B: "윷가락 2조" });
+  });
+
+  it("refuses another team's name, a duplicate and an individual room", () => {
+    const { service, sessions, snapshot: start } = teamRoom();
+    const named = dispatch(service, sessions[0].playerId, start, {
+      type: "SET_TEAM_NAME", teamId: "A", name: "범 내려온다",
+    });
+
+    // Chan은 B팀 사람이고 방장도 아니므로 A팀 이름에 손댈 수 없다.
+    expect(roomError(() => dispatch(service, sessions[2].playerId, named, {
+      type: "SET_TEAM_NAME", teamId: "A", name: "뺏은 이름",
+    })).code).toBe("TEAM_NAME_FORBIDDEN");
+
+    // 같은 이름을 쓰면 차례 안내도 결과도 어느 팀 이야기인지 알 수 없다.
+    expect(roomError(() => dispatch(service, sessions[2].playerId, named, {
+      type: "SET_TEAM_NAME", teamId: "B", name: "범 내려온다",
+    })).code).toBe("TEAM_NAME_TAKEN");
+
+    const solo = createPlayers(service, "individual", ["Host", "Bora"]);
+    expect(roomError(() => dispatch(service, solo[0].playerId, solo.at(-1)!.snapshot, {
+      type: "SET_TEAM_NAME", teamId: "A", name: "혼자",
+    })).code).toBe("WRONG_MODE");
+  });
+
+  it("drops the name back to the letter when the team clears it", () => {
+    const { service, sessions, snapshot: start } = teamRoom();
+    const named = dispatch(service, sessions[1].playerId, start, {
+      type: "SET_TEAM_NAME", teamId: "A", name: "범 내려온다",
+    });
+    const cleared = dispatch(service, sessions[1].playerId, named, {
+      type: "SET_TEAM_NAME", teamId: "A", name: "",
+    });
+    expect(cleared.teamNames).toEqual({});
+  });
+
+  it("releases the name of a team left empty", () => {
+    const { service, sessions, snapshot: start } = teamRoom();
+    const named = dispatch(service, sessions[2].playerId, start, {
+      type: "SET_TEAM_NAME", teamId: "B", name: "윷가락 2조",
+    });
+    // B팀 두 사람을 모두 내보내면 그 이름을 쥔 사람이 없다.
+    let snapshot = dispatch(service, sessions[0].playerId, named, {
+      type: "KICK_PLAYER", playerId: sessions[2].playerId,
+    });
+    snapshot = dispatch(service, sessions[0].playerId, snapshot, {
+      type: "KICK_PLAYER", playerId: sessions[3].playerId,
+    });
+    expect(snapshot.teamNames).toEqual({});
+  });
+
+  it("never sends team names in an individual room", () => {
+    const service = new RoomService(new FakeClock().options(sequenceRandom(13)));
+    const solo = createPlayers(service, "individual", ["Host", "Bora"]);
+    expect(solo.at(-1)!.snapshot.teamNames).toBeUndefined();
+  });
+});
+
 describe("diagnostic log", () => {
   const recordingService = (clock: FakeClock) => {
     const entries: Array<{ event: string; details: Record<string, unknown> }> = [];
